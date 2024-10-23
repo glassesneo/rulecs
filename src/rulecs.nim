@@ -1,7 +1,13 @@
-# This is just an example to get you started. A typical library package
-# exports the main API in this file. Note that you cannot rename this file
-# but you can remove it if you wish.
+import rulecs/[entity, component, world]
 
-proc add*(x, y: int): int =
-  ## Adds two numbers together.
-  return x + y
+# template attachBundle*(world: World, entity: Entity, bundle: tuple) =
+#   for component in bundle:
+#     world.attachComponent(entity, component)
+#
+# func `[]`*[T](world: World, entity: Entity, data: T) =
+#   world.attachComponent
+#
+# func `[]`*(world: World, T: typedesc, entity: Entity): T =
+#   return world.getMutableComponent(T, entity)
+
+export entity, component, world
