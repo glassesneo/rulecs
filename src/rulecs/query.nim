@@ -3,19 +3,19 @@
 {.experimental: "views".}
 
 import std/macros
-import std/sets
+import std/packedsets
 import rulecs/[entity, world]
 
 type Query* = object
-  entities: HashSet[Entity]
+  idSet: PackedSet[EntityId]
   world: ptr World
 
-func init*(T: type Query, entities = initHashSet[Entity](), world: ptr World): T =
-  return Query(entities: entities, world: world)
+func init*(T: type Query, idSet = initPackedSet[EntityId](), world: ptr World): T =
+  return Query(idSet: idSet, world: world)
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let
-    entity = loop[0]
+    id = loop[0]
     query = loop[^2][1]
     typeTuple = loop[^2][2]
     loopBody = loop[^1]
@@ -30,19 +30,19 @@ macro `of`*(loop: ForLoopStmt): untyped =
         let `storageName` = addr `query`.world[].storageOf(`T2`)
       loopBody.insert 0,
         quote do:
-          let `variableName` = addr `storageName`[][`entity`]
+          let `variableName` = addr `storageName`[][`id`]
     else:
       let storageName = ident("storage" & T.strVal)
       storageDef.add quote do:
         let `storageName` = addr `query`.world[].storageOf(`T`)
       loopBody.insert 0,
         quote do:
-          let `variableName` = addr `storageName`[][`entity`]
+          let `variableName` = addr `storageName`[][`id`]
 
   let resLoop = nnkForStmt.newTree(
-    entity,
+    id,
     quote do:
-      `query`.entities,
+      `query`.idSet,
     `loopBody`,
   )
 

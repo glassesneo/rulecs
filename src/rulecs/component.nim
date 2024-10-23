@@ -7,7 +7,7 @@ import rulecs/[entity]
 
 type
   AbstractComponentStorage* = object of RootObj
-    indexTable: Table[Entity, Natural]
+    indexTable: Table[EntityId, Natural]
     freeIndex: seq[Natural]
 
   ComponentStorage*[T] = object of AbstractComponentStorage
@@ -15,36 +15,38 @@ type
 
 func init*[C](T: type ComponentStorage[C]): T =
   return ComponentStorage[C](
-    indexTable: initTable[Entity, Natural](), freeIndex: @[], storage: @[]
+    indexTable: initTable[EntityId, Natural](), freeIndex: @[], storage: @[]
   )
 
-func contains*(storage: AbstractComponentStorage, entity: Entity): bool =
-  return entity in storage.indexTable
+func contains*(storage: AbstractComponentStorage, entityId: EntityId): bool =
+  return entityId in storage.indexTable
 
 func len*(storage: AbstractComponentStorage): Natural =
   return storage.indexTable.len()
 
-func removeEntity*(storage: var AbstractComponentStorage, entity: sink Entity) =
+func removeEntity*(storage: var AbstractComponentStorage, entityId: sink EntityId) =
   var index: Natural = 0
-  if storage.indexTable.pop(entity, index):
+  if storage.indexTable.pop(entityId, index):
     storage.freeIndex.add index
 
-func `[]`*[T](storage: ComponentStorage[T], entity: sink Entity): lent T =
-  return storage.storage[storage.indexTable[entity]]
+func `[]`*[T](storage: ComponentStorage[T], entityId: sink EntityId): lent T =
+  return storage.storage[storage.indexTable[entityId]]
 
-func `[]`*[T](storage: var ComponentStorage[T], entity: sink Entity): var T =
-  return storage.storage[storage.indexTable[entity]]
+func `[]`*[T](storage: var ComponentStorage[T], entityId: sink EntityId): var T =
+  return storage.storage[storage.indexTable[entityId]]
 
-func `[]=`*[T](storage: var ComponentStorage[T], entity: sink Entity, value: sink T) =
-  if entity in storage:
-    storage.storage[storage.indexTable[entity]] = value
+func `[]=`*[T](
+    storage: var ComponentStorage[T], entityId: sink EntityId, value: sink T
+) =
+  if entityId in storage:
+    storage.storage[storage.indexTable[entityId]] = value
     return
 
   if storage.freeIndex.len > 0:
     let index = storage.freeIndex.pop()
-    storage.indexTable[entity] = index
+    storage.indexTable[entityId] = index
     storage.storage[index] = value
     return
 
-  storage.indexTable[entity] = storage.storage.len
+  storage.indexTable[entityId] = storage.storage.len
   storage.storage.add(value)

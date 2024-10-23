@@ -24,7 +24,7 @@ func spawnEntity*(world: var World): lent Entity {.discardable.} =
 proc destroyEntity*(world: var World, entity: sink Entity) =
   world.entityManager.freeEntityId(entity.id)
   for storage in world.storageTable.mvalues:
-    storage.removeEntity entity
+    storage.removeEntity entity.id
 
   entity.destroy
 
@@ -37,14 +37,14 @@ func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
 func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
   return ComponentStorage[T](world.storageTable[typetraits.name(T)])
 
-func attachComponent*[T](world: var World, entity: sink Entity, data: sink T) =
+func attachComponent*[T](world: var World, entityId: sink EntityId, data: sink T) =
   if typetraits.name(T) notin world.storageTable:
     world.storageTable[typetraits.name(T)] = ComponentStorage[T].init()
 
-  world.mutableStorageOf(T)[entity] = data
+  world.mutableStorageOf(T)[entityId] = data
 
-func detachComponent*(world: var World, entity: sink Entity, T: typedesc) =
-  world.storageTable[typetraits.name(T)].removeEntity entity
+func detachComponent*(world: var World, entityId: sink EntityId, T: typedesc) =
+  world.storageTable[typetraits.name(T)].removeEntity entityId
 
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
   return Resource[T](world.resourceTable[typetraits.name(T)])

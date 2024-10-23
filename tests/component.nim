@@ -1,5 +1,5 @@
 import times
-import std/sets
+import std/packedsets
 import ../src/rulecs
 
 type Position = object
@@ -11,13 +11,13 @@ var world = World.new()
 
 let entity = world.spawnEntity()
 
-world.attachComponent(entity, Position(x: 5, y: 5))
+world.attachComponent(entity.id, Position(x: 5, y: 5))
 
-let query = Query.new([entity].toHashSet(), world = addr world)
+let query = Query.init([entity.id].toPackedSet(), world = addr world)
 
-for e, pos in query of (ptr Position):
+for id, pos in query of (ptr Position):
   pos.x = 10
 
 block:
   let storage = world.storageOf(Position)
-  echo storage[entity]
+  echo storage[entity.id]

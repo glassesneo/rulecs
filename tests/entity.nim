@@ -7,8 +7,8 @@ var world = World.new()
 
 let entity = world.spawnEntity()
 
-world.attachComponent(entity, Position(x: 5, y: 5))
+world.attachComponent(entity.id, Position(x: 5, y: 5))
 echo world.storageOf(Position).len()
 
-world.detachComponent(entity, Position)
+world.detachComponent(entity.id, Position)
 echo world.storageOf(Position).len()
