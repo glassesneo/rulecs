@@ -6,15 +6,17 @@ import std/packedsets
 import std/tables
 import std/typetraits
 import pkg/seiryu
-import rulecs/[entity, component]
+import rulecs/[entity, component, resource]
 
 type World* = ref object
-  storageTable: Table[string, AbstractComponentStorage]
   entityManager: EntityManager
+  storageTable: Table[string, AbstractComponentStorage]
+  resourceTable: Table[string, AbstractResource]
 
 func new*(T: type World): T {.construct.} =
-  result.storageTable = initTable[string, AbstractComponentStorage]()
   result.entityManager = EntityManager.init()
+  result.storageTable = initTable[string, AbstractComponentStorage]()
+  result.resourceTable = initTable[string, AbstractResource]()
 
 proc spawnEntity*(world: World): lent Entity {.discardable.} =
   return world.entityManager.spawnEntity()
@@ -43,6 +45,15 @@ func attachComponent*[T](world: World, entity: sink Entity, data: sink T) =
 
 func detachComponent*(world: World, entity: sink Entity, T: typedesc) =
   world.storageTable[typetraits.name(T)].removeEntity entity
+
+func resourceOf*(world: World, T: typedesc): lent Resource[T] =
+  return Resource[T](world.resourceTable[typetraits.name(T)])
+
+func mutableResourceOf*(world: World, T: typedesc): var Resource[T] =
+  return Resource[T](world.resourceTable[typetraits.name(T)])
+
+func addResource*[T](world: World, data: sink T) =
+  world.resourceTable[typetraits.name(T)] = Resource[T].init(data)
 
 type Query* = object
   entityIdSet*: PackedSet[EntityId]
