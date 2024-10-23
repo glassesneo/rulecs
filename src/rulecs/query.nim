@@ -34,10 +34,10 @@ macro `of`*(loop: ForLoopStmt): untyped =
     else:
       let storageName = ident("storage" & T.strVal)
       storageDef.add quote do:
-        let `storageName` = addr `query`.world[].storageOf(`T`)
+        let `storageName` = `query`.world[].storageOf(`T`)
       loopBody.insert 0,
         quote do:
-          let `variableName` = addr `storageName`[][`id`]
+          let `variableName` = `storageName`[`id`]
 
   let resLoop = nnkForStmt.newTree(
     id,
