@@ -2,13 +2,13 @@
 {.experimental: "strictDefs".}
 {.experimental: "views".}
 
-import std/packedsets
+import std/sets
 import std/tables
 import std/typetraits
 import pkg/seiryu
 import rulecs/[entity, component, resource]
 
-type World* = ref object
+type World* = object
   entityManager: EntityManager
   storageTable: Table[string, AbstractComponentStorage]
   resourceTable: Table[string, AbstractResource]
@@ -18,10 +18,10 @@ func new*(T: type World): T {.construct.} =
   result.storageTable = initTable[string, AbstractComponentStorage]()
   result.resourceTable = initTable[string, AbstractResource]()
 
-proc spawnEntity*(world: World): lent Entity {.discardable.} =
+func spawnEntity*(world: var World): lent Entity {.discardable.} =
   return world.entityManager.spawnEntity()
 
-proc destroyEntity*(world: World, entity: sink Entity) =
+proc destroyEntity*(world: var World, entity: sink Entity) =
   world.entityManager.freeEntityId(entity.id)
   for storage in world.storageTable.mvalues:
     storage.removeEntity entity
@@ -34,72 +34,23 @@ proc getEntityById*(world: World, id: sink EntityId): lent Entity =
 func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
   return ComponentStorage[T](world.storageTable[typetraits.name(T)])
 
-func mutableStorageOf*(world: World, T: typedesc): var ComponentStorage[T] =
+func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
   return ComponentStorage[T](world.storageTable[typetraits.name(T)])
 
-func attachComponent*[T](world: World, entity: sink Entity, data: sink T) =
+func attachComponent*[T](world: var World, entity: sink Entity, data: sink T) =
   if typetraits.name(T) notin world.storageTable:
     world.storageTable[typetraits.name(T)] = ComponentStorage[T].init()
 
   world.mutableStorageOf(T)[entity] = data
 
-func detachComponent*(world: World, entity: sink Entity, T: typedesc) =
+func detachComponent*(world: var World, entity: sink Entity, T: typedesc) =
   world.storageTable[typetraits.name(T)].removeEntity entity
 
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
   return Resource[T](world.resourceTable[typetraits.name(T)])
 
-func mutableResourceOf*(world: World, T: typedesc): var Resource[T] =
+func mutableResourceOf*(world: var World, T: typedesc): var Resource[T] =
   return Resource[T](world.resourceTable[typetraits.name(T)])
 
-func addResource*[T](world: World, data: sink T) =
+func addResource*[T](world: var World, data: sink T) =
   world.resourceTable[typetraits.name(T)] = Resource[T].init(data)
-
-type Query* = object
-  entityIdSet*: PackedSet[EntityId]
-  world: World
-
-func init*(
-  T: type Query, entityIdSet = initPackedSet[EntityId](), world: World
-): T {.construct.}
-
-iterator `[]`*[T](query: Query, _: typedesc[T]): (lent Entity, var T) =
-  for id in query.entityIdSet:
-    let entity = query.world.getEntityById(id)
-    yield (query.world.getEntityById(id), query.world.mutableStorageOf(T)[entity])
-
-iterator `[]`*[T, U](
-    query: Query, _: typedesc[T], _: typedesc[U]
-): (lent Entity, var T, var U) =
-  for id in query.entityIdSet:
-    let entity = query.world.entityManager.entityTable[id]
-    yield (
-      query.world.entityManager.entityTable[id],
-      query.world.mutableStorageOf(T)[entity],
-      query.world.mutableStorageOf(U)[entity],
-    )
-
-iterator `[]`*[T, U, V](
-    query: Query, _: typedesc[T], _: typedesc[U], _: typedesc[V]
-): (lent Entity, var T, var U, var V) =
-  for id in query.entityIdSet:
-    let entity = query.world.entityManager.entityTable[id]
-    yield (
-      query.world.entityManager.entityTable[id],
-      query.world.mutableStorageOf(T)[entity],
-      query.world.mutableStorageOf(U)[entity],
-      query.world.mutableStorageOf(V)[entity],
-    )
-
-iterator `[]`*[T, U, V, W](
-    query: Query, _: typedesc[T], _: typedesc[U], _: typedesc[V], _: typedesc[W]
-): (lent Entity, var T, var U, var V, var W) =
-  for id in query.entityIdSet:
-    let entity = query.world.entityManager.entityTable[id]
-    yield (
-      query.world.entityManager.entityTable[id],
-      query.world.mutableStorageOf(T)[entity],
-      query.world.mutableStorageOf(U)[entity],
-      query.world.mutableStorageOf(V)[entity],
-      query.world.mutableStorageOf(W)[entity],
-    )

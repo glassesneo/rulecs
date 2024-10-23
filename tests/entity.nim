@@ -1,10 +1,9 @@
-import std/packedsets
 import ../src/rulecs
 
 type Position = object
   x, y: int
 
-let world = World.new()
+var world = World.new()
 
 let entity = world.spawnEntity()
 

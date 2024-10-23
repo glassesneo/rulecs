@@ -2,8 +2,6 @@
 {.experimental: "strictDefs".}
 {.experimental: "views".}
 
-import rulecs/[entity]
-
 type
   AbstractResource* = object of RootObj
 
