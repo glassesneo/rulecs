@@ -11,13 +11,13 @@ var world = World.new()
 
 let entity = world.spawnEntity()
 
-world.attachComponent(entity.id, Position(x: 5, y: 5))
+world.attachComponent(entity, Position(x: 5, y: 5))
 
-let query = Query.init([entity.id].toPackedSet(), world = addr world)
+let query = Query.init([entity[].id].toPackedSet(), world = addr world)
 
 for id, pos in query of (ptr Position):
   pos.x = 10
 
 block:
   let storage = world.storageOf(Position)
-  echo storage[entity.id]
+  echo storage[entity[].id]

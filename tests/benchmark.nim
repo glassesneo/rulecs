@@ -19,9 +19,9 @@ let time = cpuTime()
 
 for i in 0 ..< 10000:
   let entity = world.spawnEntity()
-  world.attachComponent(entity.id, Position(x: 0f, y: 0f))
-  world.attachComponent(entity.id, Velocity(x: 5f, y: 5f))
-  idSet.incl entity.id
+  world.attachComponent(entity, Position(x: 0f, y: 0f))
+  world.attachComponent(entity, Velocity(x: 5f, y: 5f))
+  idSet.incl entity[].id
 
 let query = Query.init(idSet = idSet, world = addr world)
 

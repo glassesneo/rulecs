@@ -4,7 +4,7 @@
 
 import std/macros
 import std/packedsets
-import rulecs/[entity, world]
+import rulecs/[component, world]
 
 type Query* = object
   idSet: PackedSet[EntityId]
