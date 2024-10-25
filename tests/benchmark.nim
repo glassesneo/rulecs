@@ -11,7 +11,7 @@ type
   Velocity = object
     x, y: float
 
-var world = World.new()
+var world = World.init()
 
 var idSet = initPackedSet[EntityId]()
 
@@ -23,7 +23,7 @@ for i in 0 ..< 10000:
   world.attachComponent(entity, Velocity(x: 5f, y: 5f))
   idSet.incl entity[].id
 
-let query = Query.init(idSet = idSet, world = addr world)
+let query = ComponentQuery.init(idSet = idSet, world = addr world)
 
 for i in 0 ..< 10000:
   for id, pos, vel in query of (ptr Position, Velocity):

@@ -4,6 +4,7 @@
 
 import std/bitops
 import std/hashes
+import std/packedsets
 import std/tables
 import pkg/seiryu
 
@@ -43,10 +44,15 @@ func resetArchetype*(entity: sink Entity) =
   entity.archetype = 0
 
 func hasArchetype*(entity: Entity, id: ComponentId): bool =
-  entity.archetype.testBit(id)
+  return entity.archetype.testBit(id)
 
-func archetype*(entity: Entity): lent ComponentId =
-  return entity.archetype
+func hasAll*(entity: Entity, subset: ComponentId): bool =
+  return bitand(entity.archetype, subset) == subset
+
+func hasNone*(entity: Entity, subset: ComponentId): bool =
+  return bitand(entity.archetype, subset) == ComponentId(0)
+
+func archetype*(entity: Entity): lent ComponentId {.getter.}
 
 func isValidEntity*(entity: Entity): bool =
   return entity.id != InvalidEntityId
@@ -55,32 +61,38 @@ func destroy*(entity: sink Entity) =
   entity.id = InvalidEntityId
 
 type EntityManager* = object
+  idSet: PackedSet[EntityId]
   entityTable: Table[EntityId, Entity]
   nextId: EntityId
   freeIds: seq[EntityId]
 
 func init*(T: type EntityManager): T {.construct.} =
+  result.idSet = initPackedSet[EntityId]()
   result.entityTable = initTable[EntityId, Entity]()
   result.nextId = EntityId(1)
   result.freeIds = @[]
 
-func entityTable*(manager: EntityManager): lent Table[EntityId, Entity] =
-  return manager.entityTable
+func idSet*(manager: EntityManager): lent PackedSet[EntityId] {.getter.}
 
-func spawnEntity*(manager: var EntityManager): ptr Entity {.discardable.} =
+func entityTable*(manager: EntityManager): lent Table[EntityId, Entity] {.getter.}
+
+proc spawnEntity*(manager: var EntityManager): ptr Entity {.discardable.} =
   var id: EntityId
   if manager.freeIds.len == 0:
     id = move(manager.nextId)
     manager.entityTable[id] = Entity.new(id)
+    manager.idSet.incl id
     manager.nextId = EntityId(id.uint32 + 1)
   else:
     id = manager.freeIds.pop()
     manager.entityTable[id] = Entity.new(id)
+    manager.idSet.incl id
 
   return addr manager.entityTable[id]
 
-func freeEntityId*(manager: var EntityManager, id: sink EntityId) =
+proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
   manager.entityTable.del id
+  manager.idSet.excl id
   manager.freeIds.add id
 
 type

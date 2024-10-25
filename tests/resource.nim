@@ -3,7 +3,7 @@ import ../src/rulecs
 type Option = object
   flag: bool
 
-var world = World.new()
+var world = World.init()
 
 world.addResource(Option(flag: false))
 

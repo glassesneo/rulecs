@@ -3,7 +3,7 @@ import ../src/rulecs
 type Position = object
   x, y: int
 
-var world = World.new()
+var world = World.init()
 
 let entity = world.spawnEntity()
 

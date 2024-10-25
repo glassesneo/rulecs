@@ -1,3 +1,3 @@
-import rulecs/[component, resource, world, query]
+import rulecs/[component, resource, world]
 
-export component, resource, world, query
+export component, resource, world
