@@ -16,12 +16,10 @@ import rulecs/[component, resource]
 type
   World* = object
     entityManager: EntityManager
-    nextComponentId: ComponentId
-    storageTable: Table[string, AbstractComponentStorage]
-    unusedComponentTypes: HashSet[string]
+    componentRegistry: ComponentRegistry
+    componentStorages: Table[string, AbstractComponentStorage]
     resourceTable: Table[string, AbstractResource]
-    unusedSystems, runtimeSystems, startupSystems, terminateSystems:
-      Table[string, System]
+    runtimeSystems, startupSystems, terminateSystems: Table[string, System]
 
   ComponentQuery* = object
     idSet: PackedSet[EntityId]
@@ -30,59 +28,66 @@ type
   QueryTable* = Table[string, ComponentQuery]
 
   Condition* = (Entity) -> bool
-  Action* = (QueryTable) -> void
+
+  ArchetypeFilter* = object
+    queryAll: HashSet[string]
+    condition: Condition
 
   SystemKind* = enum
     Startup
     Runtime
     Terminate
 
+  Action* = (QueryTable) -> void
+
   System* = object
-    queryAll: HashSet[string]
+    queryToFilter: Table[string, ArchetypeFilter]
+    queryTable: QueryTable
     kind: SystemKind
-    condition: Condition
     action: Action
 
 func init*(T: type World): T {.construct.} =
   result.entityManager = EntityManager.init()
-  result.storageTable = initTable[string, AbstractComponentStorage]()
-  result.unusedComponentTypes = initHashSet[string]()
-  result.unusedSystems = initTable[string, System]()
+  result.componentRegistry = ComponentRegistry.init()
+  result.componentStorages = initTable[string, AbstractComponentStorage]()
   result.resourceTable = initTable[string, AbstractResource]()
 
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
   return world.entityManager.spawnEntity()
 
+proc getEntityById*(world: World, id: sink EntityId): ptr Entity =
+  return addr world.entityManager.entityTable[id]
+
+func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
+  return ComponentStorage[T](world.componentStorages[typetraits.name(T)])
+
+func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
+  return ComponentStorage[T](world.componentStorages[typetraits.name(T)])
+
+func attachComponent*[T](world: var World, entity: ptr Entity, data: sink T) =
+  let typeName = typetraits.name(T)
+
+  if typeName notin world.componentRegistry:
+    world.componentRegistry.registerComponentType(typeName)
+
+  if typeName notin world.componentStorages:
+    world.componentStorages[typeName] =
+      ComponentStorage[T].init(id = world.componentRegistry[typeName])
+
+  world.mutableStorageOf(T).putEntity(entity, data)
+
+proc detachComponent*(world: var World, entity: ptr Entity, T: typedesc) =
+  world.componentStorages[typetraits.name(T)].removeEntity(entity)
+
 proc resetEntity*(world: var World, entity: ptr Entity) =
   entity[].resetArchetype()
-  for storage in world.storageTable.mvalues:
+  for storage in world.componentStorages.mvalues:
     storage.removeEntity(entity)
 
 proc destroyEntity*(world: var World, entity: ptr Entity) =
   world.entityManager.freeEntityId(entity[].id)
   world.resetEntity(entity)
   entity[].destroy()
-
-proc getEntityById*(world: World, id: sink EntityId): ptr Entity =
-  return addr world.entityManager.entityTable[id]
-
-func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
-  return ComponentStorage[T](world.storageTable[typetraits.name(T)])
-
-func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
-  return ComponentStorage[T](world.storageTable[typetraits.name(T)])
-
-func attachComponent*[T](world: var World, entity: ptr Entity, data: sink T) =
-  let typeName = typetraits.name(T)
-  if typeName notin world.storageTable:
-    world.storageTable[typeName] =
-      ComponentStorage[T].init(1'u64 shl world.nextComponentId)
-    world.nextComponentId.inc()
-
-  world.mutableStorageOf(T).putEntity(entity, data)
-
-proc detachComponent*(world: var World, entity: ptr Entity, T: typedesc) =
-  world.storageTable[typetraits.name(T)].removeEntity(entity)
 
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
   return Resource[T](world.resourceTable[typetraits.name(T)])
@@ -99,27 +104,47 @@ func init*(
   return ComponentQuery(idSet: idSet, world: world)
 
 func init(
-    T: type System,
-    queryAll = initHashSet[string](),
+    T: type ArchetypeFilter,
+    queryAll: seq[string],
       # queryAny = initHashSet[string](),
       # queryNone = initHashSet[string](),
-    action: Action,
 ): T {.construct.} =
-  result.queryAll = queryAll
+  result.queryAll = queryAll.toHashSet()
+
+func init(
+    T: type System, queryToFilter: Table[string, ArchetypeFilter], action: Action
+): T {.construct.} =
+  result.queryToFilter = queryToFilter
+  result.queryTable = initTable[string, ComponentQuery]()
   result.action = action
 
-proc registerSystem(world: var World, system: sink System, name: string) =
-  if not system.queryAll.allIt(it in world.unusedComponentTypes):
-    world.unusedSystems[name] = system
-    return
+proc conductRuntimeSystem*(world: var World) =
+  for system in world.runtimeSystems.mvalues:
+    for queryName, filter in system.queryToFilter:
+      let queriedIdSet: PackedSet[EntityId] = collect(initPackedSet()):
+        for id, entity in world.entityManager.entityTable:
+          if filter.condition(entity):
+            {id}
 
+      system.queryTable[queryName] = ComponentQuery.init(queriedIdSet, addr world)
+
+    system.action(system.queryTable)
+
+proc createFilter(world: var World, filter: var ArchetypeFilter) =
   let idList = collect(newSeq):
-    for storage in world.storageTable.values:
-      storage.id
+    for typeName in filter.queryAll:
+      if typeName notin world.componentRegistry:
+        world.componentRegistry.registerComponentType(typeName)
+
+      world.componentRegistry[typeName]
 
   let archetypeAll = idList.foldl(a.dup(setBit(b)), ComponentId(0))
 
-  system.condition = (entity: Entity) => entity.hasAll(archetypeAll)
+  filter.condition = (entity: Entity) => entity.hasAll(archetypeAll)
+
+proc registerSystem(world: var World, system: sink System, name: string) =
+  for name, filter in system.queryToFilter.mpairs:
+    world.createFilter(filter)
 
   case system.kind
   of Runtime:
@@ -135,11 +160,49 @@ macro registerRuntimeSystem*(world: World, system: untyped) =
     `system`.kind = Runtime
     `world`.registerSystem(`system`, name = `systemName`)
 
+func gatherFilters(filterNode: NimNode): tuple[qAll: seq[string]] {.compileTime.} =
+  case filterNode[0].strVal
+  of "All":
+    result.qAll = filterNode[1 ..^ 1].mapIt(it.strVal)
+  # of "Any":
+  #   discard
+  # of "None":
+  #   discard
+  else:
+    error "Unsupported filter", filterNode[0]
+
 macro system*(theProc: untyped): untyped =
   let systemName = theProc[0]
 
-  result = quote:
-    var `systemName` = System.init()
+  let queryTableNode = ident"queryTable"
+  let tableConstr = nnkTableConstr.newTree()
+  let actionBody = theProc.body.copyNimTree()
+
+  for argument in theProc.params[1 ..^ 1]:
+    let argName = argument[0]
+    let argNameStrLit = argName.strVal.newStrLitNode()
+
+    if argument[1].kind == nnkBracket:
+      for filterNode in argument[1]:
+        let (qAll) = filterNode.gatherFilters()
+        let qAllLit = qAll.newLit()
+        let filterInitNode = quote:
+          ArchetypeFilter.init(`qAllLit`)
+
+        tableConstr.add newColonExpr(argNameStrLit, filterInitNode)
+
+      actionBody.insert 0,
+        quote do:
+          let `argName` = `queryTableNode`[`argNameStrLit`]
+    else:
+      error "Unsupported syntax", argument
+
+  let action = quote:
+    proc(`queryTableNode`: QueryTable) =
+      `actionBody`
+
+  return quote:
+    var `systemName` = System.init(`tableConstr`.toTable(), `action`)
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let

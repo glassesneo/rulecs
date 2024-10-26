@@ -6,6 +6,7 @@ import std/bitops
 import std/hashes
 import std/packedsets
 import std/tables
+import std/typetraits
 import pkg/seiryu
 
 type EntityId* = distinct uint32
@@ -104,6 +105,8 @@ type
   ComponentStorage*[T] = object of AbstractComponentStorage
     storage: seq[T]
 
+func init*(T: type AbstractComponentStorage, id: ComponentId): T {.construct.}
+
 func init*[C](T: type ComponentStorage[C], id: ComponentId): T =
   return ComponentStorage[C](
     id: id, indexTable: initTable[EntityId, Natural](), freeIndex: @[], storage: @[]
@@ -147,3 +150,27 @@ func `[]`*[T](storage: ComponentStorage[T], entityId: sink EntityId): lent T =
 
 func `[]`*[T](storage: var ComponentStorage[T], entityId: sink EntityId): var T =
   return storage.storage[storage.indexTable[entityId]]
+
+type ComponentRegistry* = object
+  nextComponentId: ComponentId
+  componentTypes*: Table[string, ComponentId]
+
+func init*(T: type ComponentRegistry): T {.construct.} =
+  result.nextComponentId = ComponentId(0)
+  result.componentTypes = initTable[string, ComponentId]()
+
+func `[]`*(registry: ComponentRegistry, typeName: string): lent ComponentId =
+  return registry.componentTypes[typeName]
+
+func `[]`*(registry: ComponentRegistry, T: typedesc): lent ComponentId =
+  return registry[typetraits.name(T)]
+
+func contains*(registry: ComponentRegistry, typeName: string): bool =
+  return typeName in registry.componentTypes
+
+func contains*(registry: ComponentRegistry, T: typedesc): bool =
+  typetraits.name(T) in registry
+
+func registerComponentType*(registry: var ComponentRegistry, typeName: string) =
+  registry.componentTypes[typeName] = 1'u64 shl registry.nextComponentId
+  registry.nextComponentId.inc()
