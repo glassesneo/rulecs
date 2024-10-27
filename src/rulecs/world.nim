@@ -1,5 +1,4 @@
 {.experimental: "strictFuncs".}
-{.experimental: "strictDefs".}
 {.experimental: "views".}
 
 import
@@ -14,6 +13,7 @@ import
 import pkg/seiryu
 import rulecs/[component, resource, filter]
 
+{.push experimental: "strictDefs".}
 type
   World* = object
     entityManager: EntityManager
@@ -106,6 +106,52 @@ func init(
   result.queryTable = initTable[string, ComponentQuery]()
   result.action = action
 
+func getComponentId(world: var World, typeName: string): ComponentId =
+  if typeName notin world.componentRegistry:
+    world.componentRegistry.registerComponentType(typeName)
+
+  return world.componentRegistry[typeName]
+
+proc createFilter(world: var World, filter: var ArchetypeFilter) =
+  let allIdList = collect(newSeq):
+    for typeName in filter.queryAll:
+      world.getComponentId(typeName)
+
+  filter.archetypeAll = allIdList.foldl(a.dup(setBit(b)), ComponentId(0))
+
+  let anyIdList = collect(newSeq):
+    for typeName in filter.queryAny:
+      world.getComponentId(typeName)
+
+  filter.archetypeAny = anyIdList.foldl(a.dup(setBit(b)), ComponentId(0))
+
+  let noneIdList = collect(newSeq):
+    for typeName in filter.queryNone:
+      world.getComponentId(typeName)
+
+  filter.archetypeNone = noneIdList.foldl(a.dup(setBit(b)), ComponentId(0))
+
+proc registerSystem(world: var World, system: sink System, name: string) =
+  for name, filter in system.queryToFilter.mpairs:
+    world.createFilter(filter)
+    system.queryTable[name] = ComponentQuery.init(world = addr world)
+
+  case system.kind
+  of Runtime:
+    world.runtimeSystems[name] = system
+  of Startup:
+    world.startupSystems[name] = system
+  of Terminate:
+    world.terminateSystems[name] = system
+
+{.pop.}
+
+macro registerRuntimeSystem*(world: World, system: untyped) =
+  let systemName = system.strVal.newStrLitNode()
+  return quote:
+    `system`.kind = Runtime
+    `world`.registerSystem(`system`, name = `systemName`)
+
 proc conductRuntimeSystem*(world: var World) =
   for system in world.runtimeSystems.mvalues:
     for queryName, filter in system.queryToFilter:
@@ -157,50 +203,6 @@ proc conductRuntimeSystem*(world: var World) =
       system.queryTable[queryName].idSet = allIdSet * anyIdSet * noneIdSet
 
     system.action(system.queryTable)
-
-func getComponentId(world: var World, typeName: string): ComponentId =
-  if typeName notin world.componentRegistry:
-    world.componentRegistry.registerComponentType(typeName)
-
-  return world.componentRegistry[typeName]
-
-proc createFilter(world: var World, filter: var ArchetypeFilter) =
-  let allIdList = collect(newSeq):
-    for typeName in filter.queryAll:
-      world.getComponentId(typeName)
-
-  filter.archetypeAll = allIdList.foldl(a.dup(setBit(b)), ComponentId(0))
-
-  let anyIdList = collect(newSeq):
-    for typeName in filter.queryAny:
-      world.getComponentId(typeName)
-
-  filter.archetypeAny = anyIdList.foldl(a.dup(setBit(b)), ComponentId(0))
-
-  let noneIdList = collect(newSeq):
-    for typeName in filter.queryNone:
-      world.getComponentId(typeName)
-
-  filter.archetypeNone = noneIdList.foldl(a.dup(setBit(b)), ComponentId(0))
-
-proc registerSystem(world: var World, system: sink System, name: string) =
-  for name, filter in system.queryToFilter.mpairs:
-    world.createFilter(filter)
-    system.queryTable[name] = ComponentQuery.init(world = addr world)
-
-  case system.kind
-  of Runtime:
-    world.runtimeSystems[name] = system
-  of Startup:
-    world.startupSystems[name] = system
-  of Terminate:
-    world.terminateSystems[name] = system
-
-macro registerRuntimeSystem*(world: World, system: untyped) =
-  let systemName = system.strVal.newStrLitNode()
-  return quote:
-    `system`.kind = Runtime
-    `world`.registerSystem(`system`, name = `systemName`)
 
 func gatherFilters(
     filterNode: NimNode

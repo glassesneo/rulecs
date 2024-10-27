@@ -1,7 +1,6 @@
 import std/packedsets
 import std/sets
 import std/tables
-import pkg/seiryu
 import rulecs/[component]
 
 type FilterCache* =
