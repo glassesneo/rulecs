@@ -53,6 +53,9 @@ func hasAll*(entity: Entity, subset: ComponentId): bool =
 func hasNone*(entity: Entity, subset: ComponentId): bool =
   return bitand(entity.archetype, subset) == ComponentId(0)
 
+func hasAny*(entity: Entity, subset: ComponentId): bool =
+  return not entity.hasNone(subset)
+
 func archetype*(entity: Entity): lent ComponentId {.getter.}
 
 func isValidEntity*(entity: Entity): bool =

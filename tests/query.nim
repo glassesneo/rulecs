@@ -1,20 +1,47 @@
 import std/packedsets
 import ../src/rulecs
 
-type Position = object
-  x, y: int
+type
+  Position = object
+    x, y: int
+
+  Velocity = object
+    x, y: int
+
+  Player = object
+
+  Enemy = object
 
 var world = World.init()
 
-for i in 0 ..< 100:
+let player = world.spawnEntity()
+world.attachComponent(player, Position(x: 0, y: 0))
+world.attachComponent(player, Velocity(x: 0, y: 0))
+world.attachComponent(player, Player())
+
+for i in 0 ..< 10:
+  let enemy = world.spawnEntity()
+  world.attachComponent(enemy, Position(x: 50, y: 0))
+  world.attachComponent(enemy, Velocity(x: 0, y: 0))
+  world.attachComponent(enemy, Enemy())
+
+for i in 0 ..< 20:
   let e = world.spawnEntity()
+  world.attachComponent(e, Position(x: 0, y: 0))
   if i mod 2 == 0:
-    world.attachComponent(e, Position(x: 5, y: 5))
+    world.attachComponent(e, Velocity(x: 5, y: 5))
 
-proc system(query1: [All[Position]], query2: [All[Position]]) {.system.} =
-  echo query1
-  echo query2
+proc battle(
+    playerQuery: [All[Player], None[Enemy]], enemyQuery: [All[Enemy], None[Player]]
+) {.system.} =
+  echo playerQuery
+  echo enemyQuery
 
-world.registerRuntimeSystem(system)
+proc move(movableQuery: [All[Position, Velocity], Any[Player, Enemy]]) {.system.} =
+  echo movableQuery
 
-world.conductRuntimeSystem()
+world.registerRuntimeSystem(battle)
+world.registerRuntimeSystem(move)
+
+for i in 0 ..< 10:
+  world.conductRuntimeSystem()
