@@ -14,6 +14,8 @@ type
 
 var world = World.init()
 
+world.setupSystems()
+
 let player = world.spawnEntity()
 world.attachComponent(player, Position(x: 0, y: 0))
 world.attachComponent(player, Velocity(x: 0, y: 0))
@@ -37,11 +39,11 @@ proc battle(
   echo playerQuery
   echo enemyQuery
 
-proc move(movableQuery: [All[Position, Velocity], Any[Player, Enemy]]) {.system.} =
+proc move(movableQuery: [All[Position, Velocity]]) {.system.} =
   echo movableQuery
 
 world.registerRuntimeSystem(battle)
 world.registerRuntimeSystem(move)
 
 for i in 0 ..< 10:
-  world.conductRuntimeSystem()
+  world.performRuntimeSystems()
