@@ -3,21 +3,21 @@ import std/sets
 import std/tables
 import rulecs/[component]
 
-type FilterCache* =
-  tuple[cacheAll, cacheAny, cacheNone: Table[ComponentId, PackedSet[EntityId]]]
+type
+  FilterKind* = enum
+    All
+    Any
+    None
 
-type ArchetypeFilter* =
-  tuple[
-    queryAll, queryAny, queryNone: HashSet[string],
-    archetypeAll, archetypeAny, archetypeNone: ComponentId,
-  ]
+  FilterCache* = array[FilterKind, Table[ComponentId, PackedSet[EntityId]]]
+
+  CompileTimeFilter* = array[FilterKind, HashSet[string]]
+
+  ArchetypeFilter* = array[FilterKind, ComponentId]
 
 func init*(
-    T: type ArchetypeFilter,
-    queryAll: seq[string],
-    queryAny: seq[string],
-    queryNone: seq[string],
+    T: type CompileTimeFilter, filterAll, filterAny, filterNone: seq[string]
 ): T =
-  result.queryAll = queryAll.toHashSet()
-  result.queryAny = queryAny.toHashSet()
-  result.queryNone = queryNone.toHashSet()
+  result[All] = filterAll.toHashSet()
+  result[Any] = filterAny.toHashSet()
+  result[None] = filterNone.toHashSet()

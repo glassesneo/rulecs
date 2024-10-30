@@ -37,6 +37,7 @@ type
   Action* = (QueryTable) -> void
 
   System* = object
+    queryToCTFilter: Table[string, CompileTimeFilter]
     queryToFilter: Table[string, ArchetypeFilter]
     queryTable: QueryTable
     kind: SystemKind
@@ -100,9 +101,10 @@ func init*(
   return ComponentQuery(idSet: idSet, world: world)
 
 func init(
-    T: type System, queryToFilter: Table[string, ArchetypeFilter], action: Action
+    T: type System, queryToCTFilter: Table[string, CompileTimeFilter], action: Action
 ): T {.construct.} =
-  result.queryToFilter = queryToFilter
+  result.queryToCTFilter = queryToCTFilter
+  result.queryToFilter = initTable[string, ArchetypeFilter]()
   result.queryTable = initTable[string, ComponentQuery]()
   result.action = action
 
@@ -112,28 +114,16 @@ func getComponentId(world: var World, typeName: string): ComponentId =
 
   return world.componentRegistry[typeName]
 
-proc createFilter(world: var World, filter: var ArchetypeFilter) =
-  let allIdList = collect(newSeq):
-    for typeName in filter.queryAll:
-      world.getComponentId(typeName)
+{.pop.}
 
-  filter.archetypeAll = allIdList.foldl(a.dup(setBit(b)), ComponentId(0))
-
-  let anyIdList = collect(newSeq):
-    for typeName in filter.queryAny:
-      world.getComponentId(typeName)
-
-  filter.archetypeAny = anyIdList.foldl(a.dup(setBit(b)), ComponentId(0))
-
-  let noneIdList = collect(newSeq):
-    for typeName in filter.queryNone:
-      world.getComponentId(typeName)
-
-  filter.archetypeNone = noneIdList.foldl(a.dup(setBit(b)), ComponentId(0))
+proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilter =
+  for i, filterKind in ctFilter:
+    let idList = ctFilter[i].mapIt(world.getComponentId(it))
+    result[i] = idList.foldl(a.dup(setBit(b)), ComponentId(0))
 
 proc registerSystem(world: var World, system: sink System, name: string) =
-  for name, filter in system.queryToFilter.mpairs:
-    world.createFilter(filter)
+  for name, ctFilter in system.queryToCTFilter.pairs:
+    system.queryToFilter[name] = world.createFilter(ctFilter)
     system.queryTable[name] = ComponentQuery.init(world = addr world)
 
   case system.kind
@@ -144,8 +134,6 @@ proc registerSystem(world: var World, system: sink System, name: string) =
   of Terminate:
     world.terminateSystems[name] = system
 
-{.pop.}
-
 macro registerRuntimeSystem*(world: World, system: untyped) =
   let systemName = system.strVal.newStrLitNode()
   return quote:
@@ -155,52 +143,50 @@ macro registerRuntimeSystem*(world: World, system: untyped) =
 proc conductRuntimeSystem*(world: var World) =
   for system in world.runtimeSystems.mvalues:
     for queryName, filter in system.queryToFilter:
-      let allIdSet = block:
+      var targetedIdSet: PackedSet[EntityId]
+      targetedIdSet = block:
         # Todo: change the condition
-        if filter.archetypeAll == 0:
-          collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              {id}
-        elif filter.archetypeAll in world.filterCache.cacheAll:
-          world.filterCache.cacheAll[filter.archetypeAll]
+        if filter[All] == 0:
+          world.entityManager.idSet
+        elif filter[All] in world.filterCache[All]:
+          world.filterCache[All][filter[All]]
         else:
-          echo "All"
           collect(initPackedSet()):
             for id, entity in world.entityManager.entityTable:
-              if entity.hasAll(filter.archetypeAll):
-                {id}
-      let anyIdSet = block:
-        if filter.archetypeAny == 0:
-          collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              {id}
-        elif filter.archetypeAny in world.filterCache.cacheAny:
-          world.filterCache.cacheAny[filter.archetypeAny]
-        else:
-          echo "Any"
-          collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              if entity.hasAny(filter.archetypeAny):
-                {id}
-      let noneIdSet = block:
-        if filter.archetypeNone == 0:
-          collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              {id}
-        elif filter.archetypeNone in world.filterCache.cacheNone:
-          world.filterCache.cacheNone[filter.archetypeNone]
-        else:
-          echo "None"
-          collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              if entity.hasNone(filter.archetypeNone):
+              if entity.hasAll(filter[All]):
                 {id}
 
-      world.filterCache.cacheAll[filter.archetypeAll] = allIdSet
-      world.filterCache.cacheAny[filter.archetypeAny] = anyIdSet
-      world.filterCache.cacheNone[filter.archetypeNone] = noneIdSet
+      world.filterCache[All][filter[All]] = targetedIdSet
 
-      system.queryTable[queryName].idSet = allIdSet * anyIdSet * noneIdSet
+      targetedIdSet = block:
+        if filter[Any] == 0:
+          targetedIdSet
+        elif filter[Any] in world.filterCache[Any]:
+          targetedIdSet * world.filterCache[Any][filter[Any]]
+        else:
+          collect(initPackedSet()):
+            for id in targetedIdSet:
+              let entity = world.entityManager.entityTable[id]
+              if entity.hasAny(filter[Any]):
+                {id}
+
+      world.filterCache[Any][filter[Any]] = targetedIdSet
+
+      targetedIdSet = block:
+        if filter[None] == 0:
+          targetedIdSet
+        elif filter[None] in world.filterCache[None]:
+          world.filterCache[None][filter[None]]
+        else:
+          collect(initPackedSet()):
+            for id in targetedIdSet:
+              let entity = world.entityManager.entityTable[id]
+              if entity.hasNone(filter[None]):
+                {id}
+
+      world.filterCache[None][filter[None]] = targetedIdSet
+
+      system.queryTable[queryName].idSet = targetedIdSet
 
     system.action(system.queryTable)
 
@@ -235,7 +221,7 @@ macro system*(theProc: untyped): untyped =
       let qAnyLit = qAny.newLit()
       let qNoneLit = qNone.newLit()
       let filterInitNode = quote:
-        ArchetypeFilter.init(`qAllLit`, `qAnyLit`, `qNoneLit`)
+        CompileTimeFilter.init(`qAllLit`, `qAnyLit`, `qNoneLit`)
 
       tableConstr.add newColonExpr(argNameStrLit, filterInitNode)
 
@@ -250,7 +236,7 @@ macro system*(theProc: untyped): untyped =
       `actionBody`
 
   return quote:
-    var `systemName` = System.init(`tableConstr`.toTable(), `action`)
+    var `systemName` = System.init(queryToCTFilter = `tableConstr`.toTable(), `action`)
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let
