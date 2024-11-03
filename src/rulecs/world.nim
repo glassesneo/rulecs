@@ -17,6 +17,7 @@ import rulecs/[component, resource, filter]
 type
   Control* = object
     world: ptr World
+    isModified: bool
 
   World* = object
     control: Control
@@ -24,7 +25,7 @@ type
     componentRegistry: ComponentRegistry
     componentStorages: Table[string, AbstractComponentStorage]
     resourceTable: Table[string, AbstractResource]
-    runtimeSystems, startupSystems, terminateSystems: Table[string, System]
+    runtimeSystems, startupSystems, terminateSystems: OrderedTable[string, System]
     filterCache: FilterCache
 
   ComponentQuery* = object
@@ -67,6 +68,9 @@ func init(
 # World
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
   return world.entityManager.spawnEntity()
+
+proc reserveEntity*(world: var World): ptr Entity {.discardable.} =
+  return world.entityManager.reserveEntity()
 
 proc getEntityById*(world: World, id: sink EntityId): ptr Entity =
   return addr world.entityManager.entityTable[id]
@@ -145,68 +149,65 @@ macro registerRuntimeSystem*(world: World, system: untyped) =
     `system`.kind = Runtime
     `world`.registerSystem(`system`, name = `systemName`)
 
+proc finishFrame*(world: var World) =
+  world.control.isModified = false
+  world.entityManager.mergeReservedEntities()
+
 proc performRuntimeSystems*(world: var World) =
+  defer:
+    world.finishFrame()
+
   for system in world.runtimeSystems.mvalues:
     for queryName, filter in system.queryToFilter:
-      var targetedIdSet: PackedSet[EntityId]
-      targetedIdSet = block:
+      var targetedIdSet: PackedSet[EntityId] = block:
         if filter[All] == 0:
           world.entityManager.idSet
-        # Todo: change the condition
-        elif filter[All] in world.filterCache[All]:
-          world.filterCache[All][filter[All]]
-        else:
-          collect(initPackedSet()):
+        elif [
+          world.entityManager.isModified,
+          world.control.isModified,
+          filter[All] notin world.filterCache,
+        ].foldl(a or b, false):
+          let res = collect(initPackedSet()):
             for id, entity in world.entityManager.entityTable:
               if entity.hasAll(filter[All]):
                 {id}
-
-      world.filterCache[All][filter[All]] = targetedIdSet
-
-      targetedIdSet = block:
-        if filter[Any] == 0:
-          targetedIdSet
-        elif filter[Any] in world.filterCache[Any]:
-          targetedIdSet * world.filterCache[Any][filter[Any]]
+          world.filterCache[filter[All]] = res
+          res
         else:
-          collect(initPackedSet()):
-            for id in targetedIdSet:
-              let entity = world.entityManager.entityTable[id]
-              if entity.hasAny(filter[Any]):
-                {id}
+          world.filterCache[filter[All]]
 
-      world.filterCache[Any][filter[Any]] = targetedIdSet
+      if filter[Any] != 0:
+        for id in targetedIdSet:
+          let entity = world.entityManager.entityTable[id]
+          if not entity.hasAny(filter[Any]):
+            targetedIdSet.excl id
 
-      targetedIdSet = block:
-        if filter[None] == 0:
-          targetedIdSet
-        elif filter[None] in world.filterCache[None]:
-          world.filterCache[None][filter[None]]
-        else:
-          collect(initPackedSet()):
-            for id in targetedIdSet:
-              let entity = world.entityManager.entityTable[id]
-              if entity.hasNone(filter[None]):
-                {id}
-
-      world.filterCache[None][filter[None]] = targetedIdSet
+      if filter[None] != 0:
+        for id in targetedIdSet:
+          let entity = world.entityManager.entityTable[id]
+          if not entity.hasNone(filter[None]):
+            targetedIdSet.excl id
 
       system.queryTable[queryName].idSet = targetedIdSet
 
     system.action(world.control, system.queryTable)
 
 # Control
+func isModified*(control: Control): lent bool {.getter.}
+
 proc spawnEntity*(control: var Control): ptr Entity {.discardable.} =
-  return control.world[].spawnEntity()
+  return control.world[].reserveEntity()
 
 proc getEntityById*(control: Control, id: sink EntityId): ptr Entity =
   return addr control.world[].entityManager.entityTable[id]
 
 func attachComponent*[T](control: var Control, entity: ptr Entity, data: sink T) =
   control.world[].attachComponent(entity, data)
+  control.isModified = true
 
 proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
   control.world[].detachComponent(entity, T)
+  control.isModified = true
 
 # ComponentQuery
 func `$`*(query: ComponentQuery): string =

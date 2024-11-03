@@ -1,4 +1,3 @@
-import std/packedsets
 import ../src/rulecs
 
 type
@@ -24,13 +23,15 @@ func generate() {.system.} =
     control.attachComponent(e, Position(x: 0, y: 0))
     if i mod 2 == 0:
       control.attachComponent(e, Velocity(x: 5, y: 5))
+  debugEcho "===========finish generating============="
 
 func detachVelocity(movables: [All[Position, Velocity]]) {.system.} =
   for id in movables:
     control.detachComponent(control.getEntityById(id), Velocity)
-    echo id
+    debugEcho id
 
 world.registerRuntimeSystem(generate)
 world.registerRuntimeSystem(detachVelocity)
 
-world.performRuntimeSystems()
+for _ in 0 ..< 3:
+  world.performRuntimeSystems()

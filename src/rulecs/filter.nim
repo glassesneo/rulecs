@@ -9,7 +9,7 @@ type
     Any
     None
 
-  FilterCache* = array[FilterKind, Table[ComponentId, PackedSet[EntityId]]]
+  FilterCache* = Table[ComponentId, PackedSet[EntityId]]
 
   CompileTimeFilter* = array[FilterKind, HashSet[string]]
 

@@ -1,4 +1,3 @@
-import std/packedsets
 import ../src/rulecs
 
 type
