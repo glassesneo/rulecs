@@ -27,6 +27,6 @@ world.registerRuntimeSystem(generateSystem)
 world.registerRuntimeSystem(moveSystem)
 
 let time = cpuTime()
-for _ in 0 ..< 1000:
+for _ in 0 ..< 10000:
   world.performRuntimeSystems
 echo "Time taken: ", cpuTime() - time

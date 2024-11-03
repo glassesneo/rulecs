@@ -201,14 +201,14 @@ proc performRuntimeSystems*(world: var World) =
 
       if filter[Any] != 0:
         for id in targetedIdSet:
-          let entity = world.entityManager.entityTable[id]
-          if not entity.hasAny(filter[Any]):
+          let entity = world.getEntityById(id)
+          if not entity[].hasAny(filter[Any]):
             targetedIdSet.excl id
 
       if filter[None] != 0:
         for id in targetedIdSet:
-          let entity = world.entityManager.entityTable[id]
-          if not entity.hasNone(filter[None]):
+          let entity = world.getEntityById(id)
+          if not entity[].hasNone(filter[None]):
             targetedIdSet.excl id
 
       system.queryTable[queryName].idSet = targetedIdSet
@@ -310,7 +310,7 @@ macro `of`*(loop: ForLoopStmt): untyped =
   let resLoop = nnkForStmt.newTree(
     id,
     quote do:
-      `query`.idSet.items,
+      `query`,
     `loopBody`,
   )
 
