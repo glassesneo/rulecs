@@ -69,6 +69,7 @@ type EntityManager* = object
   entityTable: Table[EntityId, Entity]
   reservedEntities: seq[Entity]
   nextId: EntityId
+  destroyedIds*: seq[EntityId]
   freeIds: seq[EntityId]
 
 func init*(T: type EntityManager): T {.construct.} =
@@ -118,6 +119,10 @@ proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
     manager.entityTable.del id
     manager.idSet.excl id
     manager.freeIds.add id
+
+proc freeDestroyedIds*(manager: var EntityManager) =
+  while manager.destroyedIds.len() > 0:
+    manager.freeEntityId(manager.destroyedIds.pop())
 
 type
   AbstractComponentStorage* = object of RootObj

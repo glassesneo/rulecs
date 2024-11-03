@@ -25,13 +25,13 @@ func generate() {.system.} =
       control.attachComponent(e, Velocity(x: 5, y: 5))
   debugEcho "===========finish generating============="
 
-func detachVelocity(movables: [All[Position, Velocity]]) {.system.} =
+func destroyMovable(movables: [All[Position, Velocity]]) {.system.} =
   for id in movables:
-    control.detachComponent(control.getEntityById(id), Velocity)
+    control.destroyEntity(control.getEntityById(id))
     debugEcho id
 
 world.registerRuntimeSystem(generate)
-world.registerRuntimeSystem(detachVelocity)
+world.registerRuntimeSystem(destroyMovable)
 
 for _ in 0 ..< 3:
   world.performRuntimeSystems()

@@ -149,13 +149,11 @@ macro registerRuntimeSystem*(world: World, system: untyped) =
     `system`.kind = Runtime
     `world`.registerSystem(`system`, name = `systemName`)
 
-proc finishFrame*(world: var World) =
-  world.control.isModified = false
-  world.entityManager.mergeReservedEntities()
-
 proc performRuntimeSystems*(world: var World) =
   defer:
-    world.finishFrame()
+    world.control.isModified = false
+    world.entityManager.mergeReservedEntities()
+    world.entityManager.freeDestroyedIds()
 
   for system in world.runtimeSystems.mvalues:
     for queryName, filter in system.queryToFilter:
@@ -208,6 +206,9 @@ func attachComponent*[T](control: var Control, entity: ptr Entity, data: sink T)
 proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
   control.world[].detachComponent(entity, T)
   control.isModified = true
+
+proc destroyEntity*(control: var Control, entity: ptr Entity) =
+  control.world[].entityManager.destroyedIds.add entity[].id
 
 # ComponentQuery
 func `$`*(query: ComponentQuery): string =
