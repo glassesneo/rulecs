@@ -1,7 +1,7 @@
 import std/packedsets
 import std/sets
 import std/tables
-import rulecs/[component]
+import ./component
 
 type
   FilterKind* = enum

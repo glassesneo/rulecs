@@ -23,12 +23,13 @@ func generate() {.system.} =
     control.attachComponent(e, Position(x: 0, y: 0))
     if i mod 2 == 0:
       control.attachComponent(e, Velocity(x: 5, y: 5))
+    debugEcho "generate: ", e[].id
   debugEcho "===========finish generating============="
 
 func destroyMovable(movables: [All[Position, Velocity]]) {.system.} =
   for id in movables:
     control.destroyEntity(control.getEntityById(id))
-    debugEcho id
+    debugEcho "destroy: ", id
 
 world.registerRuntimeSystem(generate)
 world.registerRuntimeSystem(destroyMovable)

@@ -22,7 +22,7 @@ type Entity* = object
   id: EntityId
   archetype: ComponentId
 
-func new(T: type Entity, id: EntityId): T {.construct.} =
+func init*(T: type Entity, id: EntityId): T {.construct.} =
   result.id = id
   result.archetype = 0
 
@@ -67,62 +67,40 @@ func destroy*(entity: sink Entity) =
 type EntityManager* = object
   idSet: PackedSet[EntityId]
   entityTable: Table[EntityId, Entity]
-  reservedEntities: seq[Entity]
   nextId: EntityId
-  destroyedIds*: seq[EntityId]
   freeIds: seq[EntityId]
 
 func init*(T: type EntityManager): T {.construct.} =
   result.nextId = EntityId(1)
   result.freeIds = @[]
 
-func isModified*(manager: EntityManager): bool =
-  return manager.reservedEntities.len != 0
-
 func idSet*(manager: EntityManager): lent PackedSet[EntityId] {.getter.}
 
 func entityTable*(manager: EntityManager): lent Table[EntityId, Entity] {.getter.}
 
-func reservedEntities*(manager: EntityManager): lent seq[Entity] {.getter.}
-
-func generateEntity(manager: var EntityManager): Entity {.discardable.} =
+func generateEntityId*(manager: var EntityManager): EntityId {.discardable.} =
   return
     if manager.freeIds.len == 0:
-      let id = move(manager.nextId)
-      manager.nextId = EntityId(id.uint32 + 1)
-      Entity.new(id)
+      defer:
+        inc manager.nextId
+      manager.nextId
     else:
-      let id = manager.freeIds.pop()
-      Entity.new(id)
+      manager.freeIds.pop()
 
 proc spawnEntity*(manager: var EntityManager): ptr Entity {.discardable.} =
-  let entity = manager.generateEntity()
-  manager.entityTable[entity.id] = entity
+  let id = manager.generateEntityId()
+  manager.entityTable[id] = Entity.init(id)
+  manager.idSet.incl id
+  return addr manager.entityTable[id]
+
+proc registerEntity*(manager: var EntityManager, entity: sink Entity) =
   manager.idSet.incl entity.id
-
-  return addr manager.entityTable[entity.id]
-
-proc reserveEntity*(manager: var EntityManager): ptr Entity {.discardable.} =
-  manager.reservedEntities.add manager.generateEntity()
-  return addr manager.reservedEntities[^1]
-
-proc mergeReservedEntities*(manager: var EntityManager) =
-  for i in 0 ..< manager.reservedEntities.len:
-    var entity = manager.reservedEntities[i]
-    manager.idSet.incl entity.id
-    manager.entityTable[entity.id] = entity
-
-  manager.reservedEntities.setLen(0)
+  manager.entityTable[entity.id] = entity
 
 proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
-  if id in manager.entityTable:
-    manager.entityTable.del id
-    manager.idSet.excl id
-    manager.freeIds.add id
-
-proc freeDestroyedIds*(manager: var EntityManager) =
-  while manager.destroyedIds.len() > 0:
-    manager.freeEntityId(manager.destroyedIds.pop())
+  manager.entityTable.del id
+  manager.idSet.excl id
+  manager.freeIds.add id
 
 type
   AbstractComponentStorage* = object of RootObj

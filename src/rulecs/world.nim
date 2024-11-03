@@ -17,6 +17,8 @@ import rulecs/[component, resource, filter]
 type
   Control* = object
     world: ptr World
+    reservedEntities: seq[Entity]
+    destroyedIds: seq[EntityId]
     isModified: bool
 
   World* = object
@@ -69,9 +71,6 @@ func init(
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
   return world.entityManager.spawnEntity()
 
-proc reserveEntity*(world: var World): ptr Entity {.discardable.} =
-  return world.entityManager.reserveEntity()
-
 proc getEntityById*(world: World, id: sink EntityId): ptr Entity =
   return addr world.entityManager.entityTable[id]
 
@@ -123,6 +122,36 @@ func getComponentId(world: var World, typeName: string): ComponentId =
     world.componentRegistry.registerComponentType(typeName)
 
   return world.componentRegistry[typeName]
+
+# Control
+proc getEntityById*(control: Control, id: sink EntityId): ptr Entity =
+  return addr control.world[].entityManager.entityTable[id]
+
+proc registerReservedEntities(control: var Control) =
+  while control.reservedEntities.len() > 0:
+    control.world[].entityManager.registerEntity(control.reservedEntities.pop())
+
+proc freeDestroyedIds(control: var Control) =
+  for id in control.destroyedIds:
+    control.world[].destroyEntity(control.getEntityById(id))
+  control.destroyedIds.setLen(0)
+
+proc spawnEntity*(control: var Control): ptr Entity {.discardable.} =
+  let id = control.world[].entityManager.generateEntityId()
+  control.reservedEntities.add Entity.init(id)
+  return addr control.reservedEntities[^1]
+
+func attachComponent*[T](control: var Control, entity: ptr Entity, data: sink T) =
+  control.world[].attachComponent(entity, data)
+  control.isModified = true
+
+proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
+  control.world[].detachComponent(entity, T)
+  control.isModified = true
+
+proc destroyEntity*(control: var Control, entity: ptr Entity) =
+  control.destroyedIds.add entity[].id
+
 {.pop.}
 
 proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilter =
@@ -152,19 +181,15 @@ macro registerRuntimeSystem*(world: World, system: untyped) =
 proc performRuntimeSystems*(world: var World) =
   defer:
     world.control.isModified = false
-    world.entityManager.mergeReservedEntities()
-    world.entityManager.freeDestroyedIds()
+    world.control.registerReservedEntities()
+    world.control.freeDestroyedIds()
 
   for system in world.runtimeSystems.mvalues:
     for queryName, filter in system.queryToFilter:
       var targetedIdSet: PackedSet[EntityId] = block:
         if filter[All] == 0:
           world.entityManager.idSet
-        elif [
-          world.entityManager.isModified,
-          world.control.isModified,
-          filter[All] notin world.filterCache,
-        ].foldl(a or b, false):
+        elif world.control.isModified or filter[All] notin world.filterCache:
           let res = collect(initPackedSet()):
             for id, entity in world.entityManager.entityTable:
               if entity.hasAll(filter[All]):
@@ -189,26 +214,6 @@ proc performRuntimeSystems*(world: var World) =
       system.queryTable[queryName].idSet = targetedIdSet
 
     system.action(world.control, system.queryTable)
-
-# Control
-func isModified*(control: Control): lent bool {.getter.}
-
-proc spawnEntity*(control: var Control): ptr Entity {.discardable.} =
-  return control.world[].reserveEntity()
-
-proc getEntityById*(control: Control, id: sink EntityId): ptr Entity =
-  return addr control.world[].entityManager.entityTable[id]
-
-func attachComponent*[T](control: var Control, entity: ptr Entity, data: sink T) =
-  control.world[].attachComponent(entity, data)
-  control.isModified = true
-
-proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
-  control.world[].detachComponent(entity, T)
-  control.isModified = true
-
-proc destroyEntity*(control: var Control, entity: ptr Entity) =
-  control.world[].entityManager.destroyedIds.add entity[].id
 
 # ComponentQuery
 func `$`*(query: ComponentQuery): string =
@@ -305,7 +310,7 @@ macro `of`*(loop: ForLoopStmt): untyped =
   let resLoop = nnkForStmt.newTree(
     id,
     quote do:
-      `query`.idSet,
+      `query`.idSet.items,
     `loopBody`,
   )
 

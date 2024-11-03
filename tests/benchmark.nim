@@ -1,6 +1,4 @@
-import std/packedsets
 import std/times
-import pkg/seiryu/aop
 import ../src/rulecs
 
 const dt = 1 / 60
@@ -12,28 +10,23 @@ type
   Velocity = object
     x, y: float
 
-var time: float
-advice log:
-  before:
-    time = cpuTime()
-  after:
-    echo "Time taken: ", cpuTime() - time
+var world = World.init()
+world.setupSystems()
 
-proc main() {.log.} =
-  var world = World.init()
-  var idSet = initPackedSet[EntityId]()
+func generateSystem() {.system.} =
+  let entity = control.spawnEntity()
+  control.attachComponent(entity, Position(x: 0f, y: 0f))
+  control.attachComponent(entity, Velocity(x: 5f, y: 5f))
 
-  for i in 0 ..< 10000:
-    let entity = world.spawnEntity()
-    world.attachComponent(entity, Position(x: 0f, y: 0f))
-    world.attachComponent(entity, Velocity(x: 5f, y: 5f))
-    idSet.incl entity[].id
+func moveSystem(movables: [All[Position, Velocity]]) {.system.} =
+  for id, pos, vel in movables of (ptr Position, Velocity):
+    pos.x += vel.x * dt
+    pos.y += vel.y * dt
 
-  let query = ComponentQuery.init(idSet = idSet, world = addr world)
+world.registerRuntimeSystem(generateSystem)
+world.registerRuntimeSystem(moveSystem)
 
-  for i in 0 ..< 10000:
-    for id, pos, vel in query of (ptr Position, Velocity):
-      pos.x += vel.x * dt
-      pos.y += vel.y * dt
-
-main()
+let time = cpuTime()
+for _ in 0 ..< 1000:
+  world.performRuntimeSystems
+echo "Time taken: ", cpuTime() - time
