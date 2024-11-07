@@ -4,14 +4,19 @@ type Option = object
   flag: bool
 
 var world = World.init()
+world.setupSystems()
 
-world.addResource(Option(flag: false))
+world.addResource(Option(flag: true))
 
-echo world.mutableResourceOf(Option).get()
+echo world.resourceOf(Option).get().flag
 
-proc change(option: var Option) =
-  option.flag = true
+func accessOption(option: Res[Option]) {.system.} =
+  echo option.flag
 
-world.mutableResourceOf(Option).get().change()
+func changeOption(option: Res[ptr Option]) {.system.} =
+  option.flag = not option.flag
 
-echo world.mutableResourceOf(Option).get()
+world.registerRuntimeSystem(accessOption)
+world.registerRuntimeSystem(changeOption)
+for _ in 0 ..< 3:
+  world.performRuntimeSystems()

@@ -26,7 +26,7 @@ type
     entityManager: EntityManager
     componentRegistry: ComponentRegistry
     componentStorages: Table[string, AbstractComponentStorage]
-    resourceTable: Table[string, AbstractResource]
+    resources: Table[string, AbstractResource]
     runtimeSystems, startupSystems, terminateSystems: OrderedTable[string, System]
     filterCache: FilterCache
 
@@ -106,13 +106,18 @@ proc destroyEntity*(world: var World, entity: ptr Entity) =
   entity[].destroy()
 
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
-  return Resource[T](world.resourceTable[typetraits.name(T)])
+  return Resource[T](world.resources[typetraits.name(T)])
 
 func mutableResourceOf*(world: var World, T: typedesc): var Resource[T] =
-  return Resource[T](world.resourceTable[typetraits.name(T)])
+  return Resource[T](world.resources[typetraits.name(T)])
 
-func addResource*[T](world: var World, data: sink T) =
-  world.resourceTable[typetraits.name(T)] = Resource[T].init(data)
+func addResource*[T](world: var World, value: sink T) =
+  let typeName = typetraits.name(T)
+
+  if typeName notin world.resources:
+    world.resources[typeName] = Resource[T]()
+
+  world.mutableResourceOf(T).set(value)
 
 func setupSystems*(world: var World) =
   world.control = Control.init(addr world)
@@ -250,7 +255,8 @@ macro system*(theProc: untyped): untyped =
     let argName = argument[0]
     let argNameStrLit = argName.strVal.newStrLitNode()
 
-    if argument[1].kind == nnkBracket:
+    case argument[1].kind
+    of nnkBracket:
       let (qAll, qAny, qNone) = argument[1].gatherFilters()
       let qAllLit = qAll.newLit()
       let qAnyLit = qAny.newLit()
@@ -263,6 +269,27 @@ macro system*(theProc: untyped): untyped =
       actionBody.insert 0,
         quote do:
           let `argName` = `queryTableNode`[`argNameStrLit`]
+    of nnkBracketExpr:
+      if argument[1][0].strVal notin ["Resource", "Res"]:
+        error "Unsupported syntax", argument[1][0]
+
+      let variableName = argument[0]
+      let T = argument[1][1]
+      if T.kind == nnkPtrTy:
+        let T2 = T[0]
+        let resourceName = ident("resource" & T2.strVal)
+        actionBody.insert 0,
+          quote do:
+            let `variableName` = block:
+              let `resourceName` = addr `controlNode`.world[].resourceOf(`T2`)
+              addr `resourceName`[].get()
+      else:
+        let resourceName = ident("resource" & T.strVal)
+        actionBody.insert 0,
+          quote do:
+            let `variableName` = block:
+              let `resourceName` = addr `controlNode`.world[].resourceOf(`T`)
+              `resourceName`[].get
     else:
       error "Unsupported syntax", argument
 
