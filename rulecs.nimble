@@ -2,7 +2,7 @@
 
 version = "0.1.0"
 author = "glassesneo"
-description = "A nimble package for Entity Component System integrated with Rule Engine"
+description = "A nimble package for efficient Entity Component System"
 license = "MIT"
 srcDir = "src"
 
