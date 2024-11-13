@@ -15,8 +15,7 @@ world.setupSystems()
 
 func generateSystem() {.system.} =
   let entity = control.spawnEntity()
-  control.attachComponent(entity, Position(x: 0f, y: 0f))
-  control.attachComponent(entity, Velocity(x: 5f, y: 5f))
+  control.attachComponents(entity, (Position(x: 0f, y: 0f), Velocity(x: 5f, y: 5f)))
 
 func moveSystem(movables: [All[Position, Velocity]]) {.system.} =
   for id, pos, vel in movables of (ptr Position, Velocity):

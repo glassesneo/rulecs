@@ -16,15 +16,11 @@ var world = World.init()
 world.setupSystems()
 
 let player = world.spawnEntity()
-world.attachComponent(player, Position(x: 0, y: 0))
-world.attachComponent(player, Velocity(x: 0, y: 0))
-world.attachComponent(player, Player())
+world.attachComponents(player, (Position(x: 0, y: 0), Velocity(x: 0, y: 0), Player()))
 
 for i in 0 ..< 10:
   let enemy = world.spawnEntity()
-  world.attachComponent(enemy, Position(x: 50, y: 0))
-  world.attachComponent(enemy, Velocity(x: 0, y: 0))
-  world.attachComponent(enemy, Enemy())
+  world.attachComponents(enemy, (Position(x: 50, y: 0), Velocity(x: 0, y: 0), Enemy()))
 
 for i in 0 ..< 20:
   let e = world.spawnEntity()

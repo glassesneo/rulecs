@@ -1,9 +1,6 @@
 {.experimental: "strictFuncs".}
 {.experimental: "views".}
 
-import std/tables
-import pkg/seiryu
-
 type
   AbstractResource* = object of RootObj
 
