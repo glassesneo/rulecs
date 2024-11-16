@@ -130,7 +130,7 @@ macro setupSystems*(world: var World): untyped =
       if `world`.componentRegistry.contains(`typeName`) and
           not `world`.componentStorages.contains(`typeName`):
         `world`.componentStorages[`typeName`] =
-          ComponentStorage[`T`](id: `world`.componentRegistry[`typeName`])
+          ComponentStorage[`T`].init(id = `world`.componentRegistry[`typeName`])
 
 func getComponentId(world: var World, typeName: string): ComponentId =
   if typeName notin world.componentRegistry:

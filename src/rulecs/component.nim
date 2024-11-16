@@ -107,7 +107,7 @@ proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
 
 type
   AbstractComponentStorage* = object of RootObj
-    id*: ComponentId
+    id: ComponentId
     indexTable: Table[EntityId, Natural]
     freeIndex: seq[Natural]
 
