@@ -4,10 +4,13 @@
 
 import std/bitops
 import std/hashes
+import std/macrocache
 import std/packedsets
 import std/tables
 import std/typetraits
 import pkg/seiryu
+
+const CTComponentRegistry* = CacheTable"ComponentRegistry"
 
 type EntityId* = distinct uint32
 
@@ -104,7 +107,7 @@ proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
 
 type
   AbstractComponentStorage* = object of RootObj
-    id: ComponentId
+    id*: ComponentId
     indexTable: Table[EntityId, Natural]
     freeIndex: seq[Natural]
 

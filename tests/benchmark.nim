@@ -10,9 +10,6 @@ type
   Velocity = object
     x, y: float
 
-var world = World.init()
-world.setupSystems()
-
 func generateSystem() {.system.} =
   let entity = control.spawnEntity()
   control.attachComponents(entity, (Position(x: 0f, y: 0f), Velocity(x: 5f, y: 5f)))
@@ -22,8 +19,10 @@ func moveSystem(movables: [All[Position, Velocity]]) {.system.} =
     pos.x += vel.x * dt
     pos.y += vel.y * dt
 
+var world = World.init()
 world.registerRuntimeSystem(generateSystem)
 world.registerRuntimeSystem(moveSystem)
+world.setupSystems()
 
 let time = cpuTime()
 for _ in 0 ..< 10000:

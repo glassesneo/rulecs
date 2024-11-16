@@ -9,8 +9,6 @@ type
 
 var world = World.init()
 
-world.setupSystems()
-
 for i in 0 ..< 20:
   let e = world.spawnEntity()
   world.attachComponent(e, Position(x: 0, y: 0))
@@ -33,6 +31,7 @@ func destroyMovable(movables: [All[Position, Velocity]]) {.system.} =
 
 world.registerRuntimeSystem(generate)
 world.registerRuntimeSystem(destroyMovable)
+world.setupSystems()
 
 for _ in 0 ..< 3:
   world.performRuntimeSystems()

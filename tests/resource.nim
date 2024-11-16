@@ -4,7 +4,6 @@ type Option = object
   flag: bool
 
 var world = World.init()
-world.setupSystems()
 
 world.addResource(Option(flag: true))
 
@@ -18,5 +17,7 @@ func changeOption(option: Res[ptr Option]) {.system.} =
 
 world.registerRuntimeSystem(accessOption)
 world.registerRuntimeSystem(changeOption)
+world.setupSystems()
+
 for _ in 0 ..< 3:
   world.performRuntimeSystems()

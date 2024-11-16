@@ -6,6 +6,7 @@ import
   std/sequtils,
   std/sugar,
   std/macros,
+  std/macrocache,
   std/packedsets,
   std/sets,
   std/tables,
@@ -119,8 +120,17 @@ func addResource*[T](world: var World, value: sink T) =
 
   world.mutableResourceOf(T).set(value)
 
-func setupSystems*(world: var World) =
-  world.control = Control.init(addr world)
+macro setupSystems*(world: var World): untyped =
+  result = newStmtList(
+    quote do:
+      `world`.control = Control.init(addr `world`)
+  )
+  for typeName, T in CTComponentRegistry:
+    result.add quote do:
+      if `world`.componentRegistry.contains(`typeName`) and
+          not `world`.componentStorages.contains(`typeName`):
+        `world`.componentStorages[`typeName`] =
+          ComponentStorage[`T`](id: `world`.componentRegistry[`typeName`])
 
 func getComponentId(world: var World, typeName: string): ComponentId =
   if typeName notin world.componentRegistry:
@@ -235,11 +245,20 @@ func gatherFilters(
   for filter in filterNode:
     case filter[0].strVal
     of "All":
-      result.qAll = filter[1 ..^ 1].mapIt(it.strVal)
+      for T in filter[1 ..^ 1]:
+        result.qAll.add(T.strVal)
+        if T.strval notin CTComponentRegistry:
+          CTComponentRegistry[T.strVal] = T
     of "Any":
-      result.qAny = filter[1 ..^ 1].mapIt(it.strVal)
+      for T in filter[1 ..^ 1]:
+        result.qAny.add(T.strVal)
+        if T.strval notin CTComponentRegistry:
+          CTComponentRegistry[T.strVal] = T
     of "None":
-      result.qNone = filter[1 ..^ 1].mapIt(it.strVal)
+      for T in filter[1 ..^ 1]:
+        result.qNone.add(T.strVal)
+        if T.strval notin CTComponentRegistry:
+          CTComponentRegistry[T.strVal] = T
     else:
       error "Unsupported filter", filter[0]
 
