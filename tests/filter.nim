@@ -26,6 +26,10 @@ for i in 0 ..< 20:
   if i mod 2 == 0:
     world.attachComponent(e, Velocity(x: 5, y: 5))
 
+proc startup(playerQuery: [All[Player], None[Enemy]]) {.system.} =
+  echo playerQuery
+  echo "start!"
+
 proc battle(
     playerQuery: [All[Player], None[Enemy]], enemyQuery: [All[Enemy], None[Player]]
 ) {.system.} =
@@ -35,10 +39,18 @@ proc battle(
 proc move(movableQuery: [All[Position, Velocity]]) {.system.} =
   echo movableQuery
 
+proc terminate(playerQuery: [All[Player], None[Enemy]]) {.system.} =
+  echo playerQuery
+  echo "finish!"
+
+world.registerStartupSystem(startup)
 world.registerRuntimeSystem(battle)
 world.registerRuntimeSystem(move)
+world.registerTerminateSystem(terminate)
 
 world.setupSystems()
 
+world.performStartupSystems()
 for i in 0 ..< 10:
   world.performRuntimeSystems()
+world.performTerminateSystems()

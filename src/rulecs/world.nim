@@ -187,11 +187,55 @@ proc registerSystem(world: var World, system: sink System, name: string) =
   of Terminate:
     world.terminateSystems[name] = system
 
+macro registerStartupSystem*(world: World, system: untyped) =
+  let systemName = system.strVal.newStrLitNode()
+  return quote:
+    `system`.kind = Startup
+    `world`.registerSystem(`system`, name = `systemName`)
+
 macro registerRuntimeSystem*(world: World, system: untyped) =
   let systemName = system.strVal.newStrLitNode()
   return quote:
     `system`.kind = Runtime
     `world`.registerSystem(`system`, name = `systemName`)
+
+macro registerTerminateSystem*(world: World, system: untyped) =
+  let systemName = system.strVal.newStrLitNode()
+  return quote:
+    `system`.kind = Terminate
+    `world`.registerSystem(`system`, name = `systemName`)
+
+proc performStartupSystems*(world: var World) =
+  defer:
+    world.control.isModified = false
+    world.control.registerReservedEntities()
+    world.control.freeDestroyedIds()
+
+  for system in world.startupSystems.mvalues:
+    for queryName, filter in system.queryToFilter:
+      var targetedIdSet: PackedSet[EntityId] = block:
+        let res = collect(initPackedSet()):
+          for id, entity in world.entityManager.entityTable:
+            if entity.hasAll(filter[All]):
+              {id}
+        world.filterCache[filter[All]] = res
+        res
+
+      if filter[Any] != 0:
+        for id in targetedIdSet:
+          let entity = world.getEntityById(id)
+          if not entity[].hasAny(filter[Any]):
+            targetedIdSet.excl id
+
+      if filter[None] != 0:
+        for id in targetedIdSet:
+          let entity = world.getEntityById(id)
+          if not entity[].hasNone(filter[None]):
+            targetedIdSet.excl id
+
+      system.queryTable[queryName].idSet = targetedIdSet
+
+    system.action(world.control, system.queryTable)
 
 proc performRuntimeSystems*(world: var World) =
   defer:
@@ -200,6 +244,43 @@ proc performRuntimeSystems*(world: var World) =
     world.control.freeDestroyedIds()
 
   for system in world.runtimeSystems.mvalues:
+    for queryName, filter in system.queryToFilter:
+      var targetedIdSet: PackedSet[EntityId] = block:
+        if filter[All] == 0:
+          world.entityManager.idSet
+        elif world.control.isModified or filter[All] notin world.filterCache:
+          let res = collect(initPackedSet()):
+            for id, entity in world.entityManager.entityTable:
+              if entity.hasAll(filter[All]):
+                {id}
+          world.filterCache[filter[All]] = res
+          res
+        else:
+          world.filterCache[filter[All]]
+
+      if filter[Any] != 0:
+        for id in targetedIdSet:
+          let entity = world.getEntityById(id)
+          if not entity[].hasAny(filter[Any]):
+            targetedIdSet.excl id
+
+      if filter[None] != 0:
+        for id in targetedIdSet:
+          let entity = world.getEntityById(id)
+          if not entity[].hasNone(filter[None]):
+            targetedIdSet.excl id
+
+      system.queryTable[queryName].idSet = targetedIdSet
+
+    system.action(world.control, system.queryTable)
+
+proc performTerminateSystems*(world: var World) =
+  # defer:
+  #   world.control.isModified = false
+  #   world.control.registerReservedEntities()
+  #   world.control.freeDestroyedIds()
+
+  for system in world.terminateSystems.mvalues:
     for queryName, filter in system.queryToFilter:
       var targetedIdSet: PackedSet[EntityId] = block:
         if filter[All] == 0:
