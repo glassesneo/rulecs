@@ -20,8 +20,8 @@ func moveSystem(movables: [All[Position, Velocity]]) {.system.} =
     pos.y += vel.y * dt
 
 var world = World.init()
-world.registerRuntimeSystem(generateSystem)
-world.registerRuntimeSystem(moveSystem)
+world.registerRuntimeSystems(generateSystem)
+world.registerRuntimeSystems(moveSystem)
 world.setupSystems()
 
 let time = cpuTime()

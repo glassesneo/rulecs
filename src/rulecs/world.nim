@@ -3,12 +3,13 @@
 
 import
   std/bitops,
-  std/sequtils,
-  std/sugar,
+  std/lists,
   std/macros,
   std/macrocache,
   std/packedsets,
+  std/sequtils,
   std/sets,
+  std/sugar,
   std/tables,
   std/typetraits
 import pkg/seiryu
@@ -28,7 +29,8 @@ type
     componentRegistry: ComponentRegistry
     componentStorages: Table[string, AbstractComponentStorage]
     resources: Table[string, AbstractResource]
-    runtimeSystems, startupSystems, terminateSystems: OrderedTable[string, System]
+    startupSystems, terminateSystems: OrderedTable[string, System]
+    runtimeSystems: SystemList
     filterCache: FilterCache
 
   ComponentQuery* = object
@@ -51,6 +53,20 @@ type
     kind: SystemKind
     action: Action
 
+  Stage* = enum
+    First
+    PreUpdate
+    Update
+    PostUpdate
+    PreDraw
+    Draw
+    PostDraw
+    Last
+
+  SystemList* = object
+    orders: array[Stage, DoublyLinkedList[string]]
+    systems: Table[string, System]
+
 func init(T: type Control, world: ptr World): T {.construct.}
 
 func init*(T: type World): T {.construct.} =
@@ -67,6 +83,10 @@ func init(
 ): T {.construct.} =
   result.queryToCTFilter = queryToCTFilter
   result.action = action
+
+func init(T: type SystemList): T {.construct.} =
+  for stage in Stage.low .. Stage.high:
+    result.orders[stage] = initDoublyLinkedList[string]()
 
 # World
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
@@ -167,6 +187,10 @@ proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
 proc destroyEntity*(control: var Control, entity: ptr Entity) =
   control.destroyedIds.add entity[].id
 
+# SystemList
+func `[]`(systemList: var SystemList, stage: Stage): var DoublyLinkedList[string] =
+  return systemList.orders[stage]
+
 {.pop.}
 
 proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilter =
@@ -174,36 +198,53 @@ proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilte
     let idList = ctFilter[i].mapIt(world.getComponentId(it))
     result[i] = idList.foldl(a.dup(setBit(b)), ComponentId(0))
 
-proc registerSystem(world: var World, system: sink System, name: string) =
+proc registerSystem(
+    world: var World, system: sink System, name: string, stage = Stage.Update
+) =
   for name, ctFilter in system.queryToCTFilter.pairs:
     system.queryToFilter[name] = world.createFilter(ctFilter)
     system.queryTable[name] = ComponentQuery.init(world = addr world)
 
   case system.kind
   of Runtime:
-    world.runtimeSystems[name] = system
+    world.runtimeSystems[stage].add name
+    world.runtimeSystems.systems[name] = system
   of Startup:
     world.startupSystems[name] = system
   of Terminate:
     world.terminateSystems[name] = system
 
-macro registerStartupSystem*(world: World, system: untyped) =
-  let systemName = system.strVal.newStrLitNode()
-  return quote:
-    `system`.kind = Startup
-    `world`.registerSystem(`system`, name = `systemName`)
+macro registerStartupSystems*(world: World, systems: varargs[untyped]) =
+  result = newStmtList()
+  for system in systems:
+    let systemName = system.strVal.newStrLitNode()
+    result.add quote do:
+      `system`.kind = Startup
+      `world`.registerSystem(`system`, name = `systemName`)
 
-macro registerRuntimeSystem*(world: World, system: untyped) =
-  let systemName = system.strVal.newStrLitNode()
-  return quote:
-    `system`.kind = Runtime
-    `world`.registerSystem(`system`, name = `systemName`)
+macro registerRuntimeSystems*(world: World, systems: varargs[untyped]) =
+  result = newStmtList()
+  for system in systems:
+    let systemName = system.strVal.newStrLitNode()
+    result.add quote do:
+      `system`.kind = Runtime
+      `world`.registerSystem(`system`, name = `systemName`, stage = Stage.Update)
 
-macro registerTerminateSystem*(world: World, system: untyped) =
-  let systemName = system.strVal.newStrLitNode()
-  return quote:
-    `system`.kind = Terminate
-    `world`.registerSystem(`system`, name = `systemName`)
+macro registerRuntimeSystemsAt*(world: World, stage: Stage, systems: varargs[untyped]) =
+  result = newStmtList()
+  for system in systems:
+    let systemName = system.strVal.newStrLitNode()
+    result.add quote do:
+      `system`.kind = Runtime
+      `world`.registerSystem(`system`, name = `systemName`, stage = `stage`)
+
+macro registerTerminateSystems*(world: World, systems: varargs[untyped]) =
+  result = newStmtList()
+  for system in systems:
+    let systemName = system.strVal.newStrLitNode()
+    result.add quote do:
+      `system`.kind = Terminate
+      `world`.registerSystem(`system`, name = `systemName`)
 
 proc performStartupSystems*(world: var World) =
   defer:
@@ -237,42 +278,46 @@ proc performStartupSystems*(world: var World) =
 
     system.action(world.control, system.queryTable)
 
+proc run(system: sink System, world: var World) =
+  for queryName, filter in system.queryToFilter:
+    var targetedIdSet: PackedSet[EntityId] = block:
+      if filter[All] == 0:
+        world.entityManager.idSet
+      elif world.control.isModified or filter[All] notin world.filterCache:
+        let res = collect(initPackedSet()):
+          for id, entity in world.entityManager.entityTable:
+            if entity.hasAll(filter[All]):
+              {id}
+        world.filterCache[filter[All]] = res
+        res
+      else:
+        world.filterCache[filter[All]]
+
+    if filter[Any] != 0:
+      for id in targetedIdSet:
+        let entity = world.getEntityById(id)
+        if not entity[].hasAny(filter[Any]):
+          targetedIdSet.excl id
+
+    if filter[None] != 0:
+      for id in targetedIdSet:
+        let entity = world.getEntityById(id)
+        if not entity[].hasNone(filter[None]):
+          targetedIdSet.excl id
+
+    system.queryTable[queryName].idSet = targetedIdSet
+
+  system.action(world.control, system.queryTable)
+
 proc performRuntimeSystems*(world: var World) =
   defer:
     world.control.isModified = false
     world.control.registerReservedEntities()
     world.control.freeDestroyedIds()
 
-  for system in world.runtimeSystems.mvalues:
-    for queryName, filter in system.queryToFilter:
-      var targetedIdSet: PackedSet[EntityId] = block:
-        if filter[All] == 0:
-          world.entityManager.idSet
-        elif world.control.isModified or filter[All] notin world.filterCache:
-          let res = collect(initPackedSet()):
-            for id, entity in world.entityManager.entityTable:
-              if entity.hasAll(filter[All]):
-                {id}
-          world.filterCache[filter[All]] = res
-          res
-        else:
-          world.filterCache[filter[All]]
-
-      if filter[Any] != 0:
-        for id in targetedIdSet:
-          let entity = world.getEntityById(id)
-          if not entity[].hasAny(filter[Any]):
-            targetedIdSet.excl id
-
-      if filter[None] != 0:
-        for id in targetedIdSet:
-          let entity = world.getEntityById(id)
-          if not entity[].hasNone(filter[None]):
-            targetedIdSet.excl id
-
-      system.queryTable[queryName].idSet = targetedIdSet
-
-    system.action(world.control, system.queryTable)
+  for stage in Stage.low .. Stage.high:
+    for name in world.runtimeSystems.orders[stage]:
+      world.runtimeSystems.systems[name].run(world)
 
 proc performTerminateSystems*(world: var World) =
   # defer:

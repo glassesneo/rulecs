@@ -43,10 +43,10 @@ proc terminate(playerQuery: [All[Player], None[Enemy]]) {.system.} =
   echo playerQuery
   echo "finish!"
 
-world.registerStartupSystem(startup)
-world.registerRuntimeSystem(battle)
-world.registerRuntimeSystem(move)
-world.registerTerminateSystem(terminate)
+world.registerStartupSystems(startup)
+world.registerRuntimeSystems(battle)
+world.registerRuntimeSystems(move)
+world.registerTerminateSystems(terminate)
 
 world.setupSystems()
 

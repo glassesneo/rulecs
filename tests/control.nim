@@ -29,8 +29,8 @@ func destroyMovable(movables: [All[Position, Velocity]]) {.system.} =
     control.destroyEntity(control.getEntityById(id))
     debugEcho "destroy: ", id
 
-world.registerRuntimeSystem(generate)
-world.registerRuntimeSystem(destroyMovable)
+world.registerRuntimeSystems(generate)
+world.registerRuntimeSystems(destroyMovable)
 world.setupSystems()
 
 for _ in 0 ..< 3:
