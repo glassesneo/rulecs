@@ -101,6 +101,17 @@ func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
 func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
   return ComponentStorage[T](world.componentStorages[typetraits.name(T)])
 
+proc getComponent*[T](world: World, entity: ptr Entity, _: typedesc[T]): lent T =
+  return world.storageOf(T)[entity[].id]
+
+proc getMutableComponent*[T](
+    world: var World, entity: ptr Entity, _: typedesc[T]
+): var T =
+  return world.mutableStorageOf(T)[entity[].id]
+
+proc hasComponent*(world: World, entity: ptr Entity, T: typedesc): bool =
+  return entity.hasAll(world.componentRegistry[typetraits.name(T)])
+
 func attachComponent*[T](world: var World, entity: ptr Entity, data: sink T) =
   let typeName = typetraits.name(T)
 
@@ -161,6 +172,23 @@ func getComponentId(world: var World, typeName: string): ComponentId =
 # Control
 proc getEntityById*(control: Control, id: sink EntityId): ptr Entity =
   return addr control.world[].entityManager.entityTable[id]
+
+func getComponentId*(control: Control, T: typedesc): lent ComponentId =
+  return control.world[].componentRegistry[typetraits.name(T)]
+
+proc getComponent*[T](control: Control, entity: ptr Entity, _: typedesc[T]): lent T =
+  return control.world[].storageOf(T)[entity[].id]
+
+proc getMutableComponent*[T](
+    control: var Control, entity: ptr Entity, _: typedesc[T]
+): var T =
+  return control.world[].mutableStorageOf(T)[entity[].id]
+
+proc hasComponent*[T](control: Control, entity: ptr Entity, _: typedesc[T]): bool =
+  return
+    T in control.world[].componentRegistry and entity[].hasAll(
+      control.getComponentId(T)
+    )
 
 proc registerReservedEntities(control: var Control) =
   while control.reservedEntities.len() > 0:

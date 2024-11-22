@@ -16,5 +16,4 @@ for id, pos in query of (ptr Position):
   pos.x = 10
 
 block:
-  let storage = world.storageOf(Position)
-  echo storage[entity[].id]
+  echo world.getMutableComponent(entity, Position)
