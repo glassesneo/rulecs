@@ -104,6 +104,10 @@ proc registerEntity*(manager: var EntityManager, entity: sink Entity) =
   manager.entityTable[entity.id] = entity
 
 proc freeEntityId*(manager: var EntityManager, id: EntityId) =
+  precondition:
+    output "invalid entity id"
+    id != InvalidEntityId
+
   manager.entityTable.del id
   manager.idSet.excl id
   manager.freeIds.add id
@@ -113,6 +117,7 @@ proc getEntityById*(manager: EntityManager, id: EntityId): ptr Entity =
     output "invalid entity id"
     id != InvalidEntityId
     output "unidentified entity id: " & $id
+    id in manager.entityTable
 
   return addr manager.entityTable[id]
 

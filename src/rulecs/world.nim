@@ -187,6 +187,11 @@ proc getEntityById*(control: Control, id: EntityId): ptr Entity =
   return control.world[].getEntityById(id)
 
 func getComponentId*(control: Control, T: typedesc): lent ComponentId =
+  precondition:
+    let typeName = typetraits.name(T)
+    output "world does not have component storage of " & typeName
+    typeName in control.world[].componentRegistry
+
   return control.world[].componentRegistry[typetraits.name(T)]
 
 proc getComponent*[T](control: Control, entity: ptr Entity, _: typedesc[T]): lent T =
