@@ -13,6 +13,7 @@ import
   std/tables,
   std/typetraits
 import pkg/seiryu
+import pkg/seiryu/dbc
 import rulecs/[component, resource, filter]
 
 {.push experimental: "strictDefs".}
@@ -74,15 +75,12 @@ func init*(T: type World): T {.construct.} =
   result.componentRegistry = ComponentRegistry.init()
 
 func init*(
-    T: type ComponentQuery, idSet = initPackedSet[EntityId](), world: ptr World
-): T =
-  return ComponentQuery(idSet: idSet, world: world)
+  T: type ComponentQuery, idSet = initPackedSet[EntityId](), world: ptr World
+): T {.construct.}
 
 func init(
-    T: type System, queryToCTFilter: Table[string, CompileTimeFilter], action: Action
-): T {.construct.} =
-  result.queryToCTFilter = queryToCTFilter
-  result.action = action
+  T: type System, queryToCTFilter: Table[string, CompileTimeFilter], action: Action
+): T {.construct.}
 
 func init(T: type SystemList): T {.construct.} =
   for stage in Stage.low .. Stage.high:
@@ -92,13 +90,21 @@ func init(T: type SystemList): T {.construct.} =
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
   return world.entityManager.spawnEntity()
 
-proc getEntityById*(world: World, id: sink EntityId): ptr Entity =
-  return addr world.entityManager.entityTable[id]
+proc getEntityById*(world: World, id: EntityId): ptr Entity =
+  return world.entityManager.getEntityById(id)
 
 func storageOf*(world: World, T: typedesc): lent ComponentStorage[T] =
+  precondition:
+    output "world does not have component storage of " & typetraits.name(T)
+    T in world.componentRegistry
+
   return ComponentStorage[T](world.componentStorages[typetraits.name(T)])
 
 func mutableStorageOf*(world: var World, T: typedesc): var ComponentStorage[T] =
+  precondition:
+    output "world does not have component storage of " & typetraits.name(T)
+    T in world.componentRegistry
+
   return ComponentStorage[T](world.componentStorages[typetraits.name(T)])
 
 proc getComponent*[T](world: World, entity: ptr Entity, _: typedesc[T]): lent T =
@@ -109,8 +115,10 @@ proc getMutableComponent*[T](
 ): var T =
   return world.mutableStorageOf(T)[entity[].id]
 
-proc hasComponent*(world: World, entity: ptr Entity, T: typedesc): bool =
-  return entity.hasAll(world.componentRegistry[typetraits.name(T)])
+proc hasComponent*[T](world: World, entity: ptr Entity, _: typedesc[T]): bool =
+  return
+    T in world.componentRegistry and
+    entity.hasAll(world.componentRegistry[typetraits.name(T)])
 
 func attachComponent*[T](world: var World, entity: ptr Entity, data: sink T) =
   let typeName = typetraits.name(T)
@@ -127,20 +135,25 @@ func attachComponent*[T](world: var World, entity: ptr Entity, data: sink T) =
 proc detachComponent*(world: var World, entity: ptr Entity, T: typedesc) =
   world.componentStorages[typetraits.name(T)].removeEntity(entity)
 
-proc resetEntity*(world: var World, entity: ptr Entity) =
-  entity[].resetArchetype()
+proc destroyEntity*(world: var World, entity: ptr Entity) =
   for storage in world.componentStorages.mvalues:
     storage.removeEntity(entity)
-
-proc destroyEntity*(world: var World, entity: ptr Entity) =
   world.entityManager.freeEntityId(entity[].id)
-  world.resetEntity(entity)
+  entity[].resetArchetype()
   entity[].destroy()
 
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
+  precondition:
+    output "world does not have resource of " & typetraits.name(T)
+    typetraits.name(T) in world.resources
+
   return Resource[T](world.resources[typetraits.name(T)])
 
 func mutableResourceOf*(world: var World, T: typedesc): var Resource[T] =
+  precondition:
+    output "world does not have resource of " & typetraits.name(T)
+    typetraits.name(T) in world.resources
+
   return Resource[T](world.resources[typetraits.name(T)])
 
 func addResource*[T](world: var World, value: sink T) =
@@ -170,8 +183,8 @@ func getComponentId(world: var World, typeName: string): ComponentId =
   return world.componentRegistry[typeName]
 
 # Control
-proc getEntityById*(control: Control, id: sink EntityId): ptr Entity =
-  return addr control.world[].entityManager.entityTable[id]
+proc getEntityById*(control: Control, id: EntityId): ptr Entity =
+  return control.world[].getEntityById(id)
 
 func getComponentId*(control: Control, T: typedesc): lent ComponentId =
   return control.world[].componentRegistry[typetraits.name(T)]
@@ -185,10 +198,7 @@ proc getMutableComponent*[T](
   return control.world[].mutableStorageOf(T)[entity[].id]
 
 proc hasComponent*[T](control: Control, entity: ptr Entity, _: typedesc[T]): bool =
-  return
-    T in control.world[].componentRegistry and entity[].hasAll(
-      control.getComponentId(T)
-    )
+  return control.world[].hasComponent(entity, T)
 
 proc registerReservedEntities(control: var Control) =
   while control.reservedEntities.len() > 0:

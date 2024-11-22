@@ -9,6 +9,7 @@ import std/packedsets
 import std/tables
 import std/typetraits
 import pkg/seiryu
+import pkg/seiryu/dbc
 
 const CTComponentRegistry* = CacheTable"ComponentRegistry"
 
@@ -26,6 +27,10 @@ type Entity* = object
   archetype: ComponentId
 
 func init*(T: type Entity, id: EntityId): T {.construct.} =
+  precondition:
+    output "invalid entity id"
+    id != InvalidEntityId
+
   result.id = id
   result.archetype = 0
 
@@ -34,9 +39,6 @@ func `$`*(entity: Entity): string =
 
 func hash*(entity: Entity): Hash =
   return uint32(entity.id).hash()
-
-func id*(entity: Entity): lent EntityId =
-  return entity.id
 
 func setArchetype*(entity: var Entity, id: ComponentId) =
   entity.archetype.setBit(id)
@@ -59,13 +61,18 @@ func hasNone*(entity: Entity, subset: ComponentId): bool =
 func hasAny*(entity: Entity, subset: ComponentId): bool =
   return not entity.hasNone(subset)
 
-func archetype*(entity: Entity): lent ComponentId {.getter.}
-
 func isValidEntity*(entity: Entity): bool =
   return entity.id != InvalidEntityId
 
 func destroy*(entity: sink Entity) =
   entity.id = InvalidEntityId
+
+proc destroy*(entity: ptr Entity) =
+  entity[].id = InvalidEntityId
+
+func id*(entity: Entity): lent EntityId {.getter.}
+
+func archetype*(entity: Entity): lent ComponentId {.getter.}
 
 type EntityManager* = object
   idSet: PackedSet[EntityId]
@@ -76,10 +83,6 @@ type EntityManager* = object
 func init*(T: type EntityManager): T {.construct.} =
   result.nextId = EntityId(1)
   result.freeIds = @[]
-
-func idSet*(manager: EntityManager): lent PackedSet[EntityId] {.getter.}
-
-func entityTable*(manager: EntityManager): lent Table[EntityId, Entity] {.getter.}
 
 func generateEntityId*(manager: var EntityManager): EntityId {.discardable.} =
   return
@@ -100,10 +103,22 @@ proc registerEntity*(manager: var EntityManager, entity: sink Entity) =
   manager.idSet.incl entity.id
   manager.entityTable[entity.id] = entity
 
-proc freeEntityId*(manager: var EntityManager, id: sink EntityId) =
+proc freeEntityId*(manager: var EntityManager, id: EntityId) =
   manager.entityTable.del id
   manager.idSet.excl id
   manager.freeIds.add id
+
+proc getEntityById*(manager: EntityManager, id: EntityId): ptr Entity =
+  precondition:
+    output "invalid entity id"
+    id != InvalidEntityId
+    output "unidentified entity id: " & $id
+
+  return addr manager.entityTable[id]
+
+func idSet*(manager: EntityManager): lent PackedSet[EntityId] {.getter.}
+
+func entityTable*(manager: EntityManager): lent Table[EntityId, Entity] {.getter.}
 
 type
   AbstractComponentStorage* = object of RootObj
@@ -121,9 +136,6 @@ func init*[C](T: type ComponentStorage[C], id: ComponentId): T =
     id: id, indexTable: initTable[EntityId, Natural](), freeIndex: @[], storage: @[]
   )
 
-func id*(storage: AbstractComponentStorage): lent ComponentId =
-  return storage.id
-
 func contains*(storage: AbstractComponentStorage, entityId: EntityId): bool =
   return entityId in storage.indexTable
 
@@ -133,6 +145,10 @@ func len*(storage: AbstractComponentStorage): Natural =
 func putEntity*[T](
     storage: var ComponentStorage[T], entity: ptr Entity, value: sink T
 ) =
+  precondition:
+    output "invalid entity id"
+    entity[].id != InvalidEntityId
+
   if entity[].id in storage:
     storage.storage[storage.indexTable[entity[].id]] = value
     return
@@ -149,16 +165,33 @@ func putEntity*[T](
   entity[].setArchetype storage.id
 
 proc removeEntity*(storage: var AbstractComponentStorage, entity: ptr Entity) =
+  ## Does nothing when `storage` does not contain `entity`
+  precondition:
+    output "invalid entity id"
+    entity[].id != InvalidEntityId
+
   var index: Natural = 0
   if storage.indexTable.pop(entity[].id, index):
     storage.freeIndex.add index
     entity[].clearArchetype(storage.id)
 
-func `[]`*[T](storage: ComponentStorage[T], entityId: sink EntityId): lent T =
+func `[]`*[T](storage: ComponentStorage[T], entityId: EntityId): lent T =
+  precondition:
+    output "component storage of " & typetraits.name(T) & " does not have entity id: " &
+      $entityId
+    entityId in storage.indexTable
+
   return storage.storage[storage.indexTable[entityId]]
 
-func `[]`*[T](storage: var ComponentStorage[T], entityId: sink EntityId): var T =
+func `[]`*[T](storage: var ComponentStorage[T], entityId: EntityId): var T =
+  precondition:
+    output "component storage of " & typetraits.name(T) & " does not have entity id: " &
+      $entityId
+    entityId in storage.indexTable
+
   return storage.storage[storage.indexTable[entityId]]
+
+func id*(storage: AbstractComponentStorage): lent ComponentId {.getter.}
 
 type ComponentRegistry* = object
   nextComponentId: ComponentId
@@ -168,18 +201,26 @@ func init*(T: type ComponentRegistry): T {.construct.} =
   result.nextComponentId = ComponentId(0)
   result.componentTypes = initTable[string, ComponentId]()
 
-func `[]`*(registry: ComponentRegistry, typeName: string): lent ComponentId =
-  return registry.componentTypes[typeName]
-
-func `[]`*(registry: ComponentRegistry, T: typedesc): lent ComponentId =
-  return registry[typetraits.name(T)]
-
 func contains*(registry: ComponentRegistry, typeName: string): bool =
   return typeName in registry.componentTypes
 
 func contains*(registry: ComponentRegistry, T: typedesc): bool =
   typetraits.name(T) in registry
 
+func `[]`*(registry: ComponentRegistry, typeName: string): lent ComponentId =
+  precondition:
+    output "unregistered component type:" & typeName
+    typeName in registry
+
+  return registry.componentTypes[typeName]
+
+func `[]`*(registry: ComponentRegistry, T: typedesc): lent ComponentId =
+  return registry[typetraits.name(T)]
+
 func registerComponentType*(registry: var ComponentRegistry, typeName: string) =
+  precondition:
+    output "duplicate registration of component type: " & typeName
+    typeName notin registry
+
   registry.componentTypes[typeName] = 1'u64 shl registry.nextComponentId
   registry.nextComponentId.inc()
