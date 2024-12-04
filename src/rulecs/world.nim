@@ -63,6 +63,7 @@ type
     Draw
     PostDraw
     Last
+    PostProcess
 
   SystemList* = object
     orders: array[Stage, DoublyLinkedList[string]]
