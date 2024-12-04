@@ -404,9 +404,9 @@ proc performTerminateSystems*(world: var World) =
 func `$`*(query: ComponentQuery): string =
   return $query.idSet
 
-iterator items*(query: ComponentQuery): lent EntityId =
+iterator items*(query: ComponentQuery): ptr Entity =
   for id in query.idSet:
-    yield id
+    yield query.world[].getEntityById(id)
 
 # DSL
 func gatherFilters(
@@ -499,7 +499,7 @@ macro system*(theProc: untyped): untyped =
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let
-    id = loop[0]
+    entity = loop[0]
     query = loop[^2][1]
     typeTuple = loop[^2][2]
     loopBody = loop[^1]
@@ -514,17 +514,17 @@ macro `of`*(loop: ForLoopStmt): untyped =
         let `storageName` = addr `query`.world[].storageOf(`T2`)
       loopBody.insert 0,
         quote do:
-          let `variableName` = addr `storageName`[][`id`]
+          let `variableName` = addr `storageName`[][`entity`[].id]
     else:
       let storageName = ident("storage" & T.strVal)
       storageDef.add quote do:
         let `storageName` = `query`.world[].storageOf(`T`)
       loopBody.insert 0,
         quote do:
-          let `variableName` = `storageName`[`id`]
+          let `variableName` = `storageName`[`entity`[].id]
 
   let resLoop = nnkForStmt.newTree(
-    id,
+    entity,
     quote do:
       `query`,
     `loopBody`,

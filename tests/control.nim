@@ -25,9 +25,9 @@ func generate() {.system.} =
   debugEcho "===========finish generating============="
 
 func destroyMovable(movables: [All[Position, Velocity]]) {.system.} =
-  for id in movables:
-    control.destroyEntity(control.getEntityById(id))
-    debugEcho "destroy: ", id
+  for entity in movables:
+    control.destroyEntity(entity)
+    debugEcho "destroy: ", entity[].id
 
 world.registerRuntimeSystems(generate)
 world.registerRuntimeSystems(destroyMovable)
