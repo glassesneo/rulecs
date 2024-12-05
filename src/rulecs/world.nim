@@ -51,7 +51,6 @@ type
     queryToCTFilter: Table[string, CompileTimeFilter]
     queryToFilter: Table[string, ArchetypeFilter]
     queryTable: QueryTable
-    kind: SystemKind
     action: Action
 
   Stage* = enum
@@ -242,53 +241,44 @@ proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilte
     let idList = ctFilter[i].mapIt(world.getComponentId(it))
     result[i] = idList.foldl(a.dup(setBit(b)), ComponentId(0))
 
-proc registerSystem(
-    world: var World, system: sink System, name: string, stage = Stage.Update
-) =
+proc convertFilter(world: var World, system: var System) =
   for name, ctFilter in system.queryToCTFilter.pairs:
     system.queryToFilter[name] = world.createFilter(ctFilter)
     system.queryTable[name] = ComponentQuery.init(world = addr world)
-
-  case system.kind
-  of Runtime:
-    world.runtimeSystems[stage].add name
-    world.runtimeSystems.systems[name] = system
-  of Startup:
-    world.startupSystems[name] = system
-  of Terminate:
-    world.terminateSystems[name] = system
 
 macro registerStartupSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal.newStrLitNode()
     result.add quote do:
-      `system`.kind = Startup
-      `world`.registerSystem(`system`, name = `systemName`)
+      `world`.convertFilter(`system`)
+      `world`.startupSystems[`systemName`] = `system`
 
 macro registerRuntimeSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal.newStrLitNode()
     result.add quote do:
-      `system`.kind = Runtime
-      `world`.registerSystem(`system`, name = `systemName`, stage = Stage.Update)
+      `world`.convertFilter(`system`)
+      `world`.runtimeSystems[Stage.Update].add `systemName`
+      `world`.runtimeSystems.systems[`systemName`] = `system`
 
 macro registerRuntimeSystemsAt*(world: World, stage: Stage, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal.newStrLitNode()
     result.add quote do:
-      `system`.kind = Runtime
-      `world`.registerSystem(`system`, name = `systemName`, stage = `stage`)
+      `world`.convertFilter(`system`)
+      `world`.runtimeSystems[`stage`].add `systemName`
+      `world`.runtimeSystems.systems[`systemName`] = `system`
 
 macro registerTerminateSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal.newStrLitNode()
     result.add quote do:
-      `system`.kind = Terminate
-      `world`.registerSystem(`system`, name = `systemName`)
+      `world`.convertFilter(`system`)
+      `world`.terminateSystems[`systemName`] = `system`
 
 proc performStartupSystems*(world: var World) =
   defer:
