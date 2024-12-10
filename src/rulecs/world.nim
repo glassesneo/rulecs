@@ -16,6 +16,8 @@ import pkg/seiryu
 import pkg/seiryu/dbc
 import rulecs/[component, resource, filter]
 
+const QueryToCTFilterTable = CacheTable"QueryToCTFilter"
+
 {.push experimental: "strictDefs".}
 type
   Control* = object
@@ -48,7 +50,6 @@ type
   Action* = (var Control, QueryTable) -> void
 
   System* = object
-    queryToCTFilter: Table[string, CompileTimeFilter]
     queryToFilter: Table[string, ArchetypeFilter]
     queryTable: QueryTable
     action: Action
@@ -78,9 +79,7 @@ func init*(
   T: type ComponentQuery, idSet = initPackedSet[EntityId](), world: ptr World
 ): T {.construct.}
 
-func init(
-  T: type System, queryToCTFilter: Table[string, CompileTimeFilter], action: Action
-): T {.construct.}
+func init(T: type System, action: Action): T {.construct.}
 
 func init(T: type SystemList): T {.construct.} =
   for stage in Stage.low .. Stage.high:
@@ -241,44 +240,56 @@ proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilte
     let idList = ctFilter[i].mapIt(world.getComponentId(it))
     result[i] = idList.foldl(a.dup(setBit(b)), ComponentId(0))
 
-proc convertFilter(world: var World, system: var System) =
-  for name, ctFilter in system.queryToCTFilter.pairs:
+proc convertFilter(
+    world: var World,
+    system: var System,
+    queryToCTFilter: Table[string, CompileTimeFilter],
+) =
+  for name, ctFilter in queryToCTFilter.pairs:
     system.queryToFilter[name] = world.createFilter(ctFilter)
     system.queryTable[name] = ComponentQuery.init(world = addr world)
 
 macro registerStartupSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
-    let systemName = system.strVal.newStrLitNode()
+    let systemName = system.strVal
+    let systemNameLit = systemName.newStrLitNode()
+    let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
-      `world`.convertFilter(`system`)
-      `world`.startupSystems[`systemName`] = `system`
+      `world`.convertFilter(`system`, `queryToCTFilter`)
+      `world`.startupSystems[`systemNameLit`] = `system`
 
 macro registerRuntimeSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
-    let systemName = system.strVal.newStrLitNode()
+    let systemName = system.strVal
+    let systemNameLit = systemName.newStrLitNode()
+    let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
-      `world`.convertFilter(`system`)
-      `world`.runtimeSystems[Stage.Update].add `systemName`
-      `world`.runtimeSystems.systems[`systemName`] = `system`
+      `world`.convertFilter(`system`, `queryToCTFilter`)
+      `world`.runtimeSystems[Stage.Update].add `systemNameLit`
+      `world`.runtimeSystems.systems[`systemNameLit`] = `system`
 
 macro registerRuntimeSystemsAt*(world: World, stage: Stage, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
-    let systemName = system.strVal.newStrLitNode()
+    let systemName = system.strVal
+    let systemNameLit = systemName.newStrLitNode()
+    let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
-      `world`.convertFilter(`system`)
-      `world`.runtimeSystems[`stage`].add `systemName`
-      `world`.runtimeSystems.systems[`systemName`] = `system`
+      `world`.convertFilter(`system`, `queryToCTFilter`)
+      `world`.runtimeSystems[`stage`].add `systemNameLit`
+      `world`.runtimeSystems.systems[`systemNameLit`] = `system`
 
 macro registerTerminateSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
-    let systemName = system.strVal.newStrLitNode()
+    let systemName = system.strVal
+    let systemNameLit = systemName.newStrLitNode()
+    let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
-      `world`.convertFilter(`system`)
-      `world`.terminateSystems[`systemName`] = `system`
+      `world`.convertFilter(`system`, `queryToCTFilter`)
+      `world`.terminateSystems[`systemNameLit`] = `system`
 
 proc performStartupSystems*(world: var World) =
   defer:
@@ -484,8 +495,10 @@ macro system*(theProc: untyped): untyped =
       quote:
         `tableConstr`.toTable()
 
+  QueryToCTFilterTable[systemName.strVal] = ctFilterTable
+
   return quote:
-    var `systemName` = System.init(queryToCTFilter = `ctFilterTable`, `action`)
+    var `systemName` = System.init(`action`)
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let
