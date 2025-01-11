@@ -14,7 +14,7 @@ import
   std/typetraits
 import pkg/seiryu
 import pkg/seiryu/dbc
-import rulecs/[component, resource, filter]
+import rulecs/[component, event, filter, resource]
 
 const QueryToCTFilterTable = CacheTable"QueryToCTFilter"
 
@@ -32,6 +32,7 @@ type
     componentRegistry: ComponentRegistry
     componentStorages: Table[string, AbstractComponentStorage]
     resources: Table[string, AbstractResource]
+    events: Table[string, AbstractEvent]
     startupSystems, terminateSystems: OrderedTable[string, System]
     runtimeSystems: SystemList
     filterCache: FilterCache
@@ -163,6 +164,32 @@ func addResource*[T](world: var World, value: sink T) =
 
   world.mutableResourceOf(T).set(value)
 
+func eventOf*(world: World, T: typedesc): lent Event[T] =
+  precondition:
+    output "world does not have event of " & typetraits.name(T)
+    typetraits.name(T) in world.events
+
+  return Event[T](world.events[typetraits.name(T)])
+
+func mutableEventOf*(world: var World, T: typedesc): var Event[T] =
+  precondition:
+    output "world does not have event of " & typetraits.name(T)
+    typetraits.name(T) in world.events
+
+  return Event[T](world.events[typetraits.name(T)])
+
+func registerEvent*(world: var World, T: typedesc) =
+  precondition:
+    output typetraits.name(T) & "is already registered"
+    typetraits.name(T) notin world.events
+
+  let typeName = typetraits.name(T)
+
+  world.events[typeName] = Event[T].init()
+
+func dispatchEvent*[T](world: var World, data: sink T) =
+  world.mutableEventOf(T).add data
+
 macro setupSystems*(world: var World): untyped =
   result = newStmtList(
     quote do:
@@ -228,6 +255,9 @@ proc detachComponent*(control: var Control, entity: ptr Entity, T: typedesc) =
 
 proc destroyEntity*(control: var Control, entity: ptr Entity) =
   control.destroyedIds.add entity[].id
+
+proc dispatchEvent*[T](control: var Control, data: sink T) =
+  control.world[].mutableEventOf(T).add data
 
 # SystemList
 func `[]`(systemList: var SystemList, stage: Stage): var DoublyLinkedList[string] =
@@ -434,7 +464,7 @@ func gatherFilters(
       error "Unsupported filter", filter[0]
 
 macro system*(theProc: untyped): untyped =
-  let systemName = theProc[0]
+  let systemName = theProc[0].basename
 
   let queryTableNode = ident"queryTable"
   let controlNode = ident"control"
@@ -460,26 +490,33 @@ macro system*(theProc: untyped): untyped =
         quote do:
           let `argName` = `queryTableNode`[`argNameStrLit`]
     of nnkBracketExpr:
-      if argument[1][0].strVal notin ["Resource", "Res"]:
-        error "Unsupported syntax", argument[1][0]
-
       let variableName = argument[0]
       let T = argument[1][1]
-      if T.kind == nnkPtrTy:
-        let T2 = T[0]
-        let resourceName = ident("resource" & T2.strVal)
+      case argument[1][0].strVal
+      of "Resource", "Res":
+        if T.kind == nnkPtrTy:
+          let T2 = T[0]
+          let resourceName = ident("resource" & T2.strVal)
+          actionBody.insert 0,
+            quote do:
+              let `variableName` = block:
+                let `resourceName` = addr `controlNode`.world[].resourceOf(`T2`)
+                addr `resourceName`[].get()
+        else:
+          let resourceName = ident("resource" & T.strVal)
+          actionBody.insert 0,
+            quote do:
+              let `variableName` = block:
+                let `resourceName` = addr `controlNode`.world[].resourceOf(`T`)
+                `resourceName`[].get
+      of "Event":
         actionBody.insert 0,
           quote do:
-            let `variableName` = block:
-              let `resourceName` = addr `controlNode`.world[].resourceOf(`T2`)
-              addr `resourceName`[].get()
+            let `variableName` = `controlNode`.world[].eventOf(`T`)
+            if `variableName`.hasNextEvent:
+              `controlNode`.world[].mutableEventOf(`T`).moveQueue()
       else:
-        let resourceName = ident("resource" & T.strVal)
-        actionBody.insert 0,
-          quote do:
-            let `variableName` = block:
-              let `resourceName` = addr `controlNode`.world[].resourceOf(`T`)
-              `resourceName`[].get
+        error "Unsupported syntax", argument[1][0]
     else:
       error "Unsupported syntax", argument
 

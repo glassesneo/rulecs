@@ -10,6 +10,7 @@ import std/tables
 import std/typetraits
 import pkg/seiryu
 import pkg/seiryu/dbc
+import pkg/stew/bitops2
 
 const CTComponentRegistry* = CacheTable"ComponentRegistry"
 
@@ -40,10 +41,10 @@ func `$`*(entity: Entity): string =
 func hash*(entity: Entity): Hash =
   return uint32(entity.id).hash()
 
-func setArchetype*(entity: var Entity, id: ComponentId) =
+proc setArchetype*(entity: var Entity, id: ComponentId) =
   entity.archetype.setBit(id)
 
-func clearArchetype*(entity: var Entity, id: ComponentId) =
+proc clearArchetype*(entity: var Entity, id: ComponentId) =
   entity.archetype.clearBit(id)
 
 func resetArchetype*(entity: sink Entity) =
@@ -52,13 +53,13 @@ func resetArchetype*(entity: sink Entity) =
 func hasArchetype*(entity: Entity, id: ComponentId): bool =
   return entity.archetype.testBit(id)
 
-func hasAll*(entity: Entity, subset: ComponentId): bool =
-  return bitand(entity.archetype, subset) == subset
+proc hasAll*(entity: Entity, subset: ComponentId): bool =
+  return masked(entity.archetype, subset) == subset
 
-func hasNone*(entity: Entity, subset: ComponentId): bool =
-  return bitand(entity.archetype, subset) == ComponentId(0)
+proc hasNone*(entity: Entity, subset: ComponentId): bool =
+  return masked(entity.archetype, subset) == ComponentId(0)
 
-func hasAny*(entity: Entity, subset: ComponentId): bool =
+proc hasAny*(entity: Entity, subset: ComponentId): bool =
   return not entity.hasNone(subset)
 
 func isValidEntity*(entity: Entity): bool =

@@ -1,4 +1,4 @@
-import rulecs/[component, resource, world]
+import rulecs/[component, event, resource, world]
 
 func attachComponents*(world: var World, entity: ptr Entity, components: sink tuple) =
   for component in components.fields:
@@ -10,4 +10,4 @@ func attachComponents*(
   for component in components.fields:
     control.attachComponent(entity, component)
 
-export component, resource, world
+export component, event, resource, world
