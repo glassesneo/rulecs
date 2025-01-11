@@ -10,7 +10,6 @@ import std/tables
 import std/typetraits
 import pkg/seiryu
 import pkg/seiryu/dbc
-import pkg/stew/bitops2
 
 const CTComponentRegistry* = CacheTable"ComponentRegistry"
 
