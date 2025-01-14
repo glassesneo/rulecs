@@ -142,24 +142,30 @@ proc destroyEntity*(world: var World, entity: ptr Entity) =
   entity[].resetArchetype()
   entity[].destroy()
 
+func hasResource*(world: World, T: typedesc): bool =
+  return typetraits.name(T) in world.resources
+
+func hasResource*(world: World, typeName: string): bool =
+  return typeName in world.resources
+
 func resourceOf*(world: World, T: typedesc): lent Resource[T] =
   precondition:
     output "world does not have resource of " & typetraits.name(T)
-    typetraits.name(T) in world.resources
+    world.hasResource(T)
 
   return Resource[T](world.resources[typetraits.name(T)])
 
 func mutableResourceOf*(world: var World, T: typedesc): var Resource[T] =
   precondition:
     output "world does not have resource of " & typetraits.name(T)
-    typetraits.name(T) in world.resources
+    world.hasResource(T)
 
   return Resource[T](world.resources[typetraits.name(T)])
 
 func addResource*[T](world: var World, value: sink T) =
   let typeName = typetraits.name(T)
 
-  if typeName notin world.resources:
+  if not world.hasResource(typeName):
     world.resources[typeName] = Resource[T]()
 
   world.mutableResourceOf(T).set(value)
@@ -231,7 +237,17 @@ proc getMutableComponent*[T](
 proc hasComponent*[T](control: Control, entity: ptr Entity, _: typedesc[T]): bool =
   return control.world[].hasComponent(entity, T)
 
+func hasResource*(control: Control, T: typedesc): bool =
+  return control.world[].hasResource(T)
+
+func hasResource*(control: Control, typeName: string): bool =
+  return control.world[].hasResource(typeName)
+
 proc registerReservedEntities(control: var Control) =
+  if control.reservedEntities.len() == 0:
+    return
+
+  control.isModified = true
   while control.reservedEntities.len() > 0:
     control.world[].entityManager.registerEntity(control.reservedEntities.pop())
 
