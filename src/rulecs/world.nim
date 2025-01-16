@@ -51,6 +51,7 @@ type
   Action* = (var Control, QueryTable) -> void
 
   System* = object
+    id: Natural
     queryToFilter: Table[string, ArchetypeFilter]
     queryTable: QueryTable
     action: Action
@@ -67,8 +68,8 @@ type
     PostProcess
 
   SystemList* = object
-    orders: array[Stage, DoublyLinkedList[string]]
-    systems: Table[string, System]
+    orders: array[Stage, DoublyLinkedList[Natural]]
+    systems: seq[System]
 
 func init(T: type Control, world: ptr World): T {.construct.}
 
@@ -80,11 +81,12 @@ func init*(
   T: type ComponentQuery, idSet = initPackedSet[EntityId](), world: ptr World
 ): T {.construct.}
 
-func init(T: type System, action: Action): T {.construct.}
+func init(T: type System, id: Natural, action: Action): T {.construct.}
 
 func init(T: type SystemList): T {.construct.} =
   for stage in Stage.low .. Stage.high:
-    result.orders[stage] = initDoublyLinkedList[string]()
+    result.orders[stage] = initDoublyLinkedList[Natural]()
+  result.systems = newSeq[System](len = 1000)
 
 # World
 proc spawnEntity*(world: var World): ptr Entity {.discardable.} =
@@ -276,9 +278,6 @@ proc dispatchEvent*[T](control: var Control, data: sink T) =
   control.world[].mutableEventOf(T).add data
 
 # SystemList
-func `[]`(systemList: var SystemList, stage: Stage): var DoublyLinkedList[string] =
-  return systemList.orders[stage]
-
 {.pop.}
 
 proc createFilter(world: var World, ctFilter: CompileTimeFilter): ArchetypeFilter =
@@ -309,23 +308,25 @@ macro registerRuntimeSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal
-    let systemNameLit = systemName.newStrLitNode()
     let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
       `world`.convertFilter(`system`, `queryToCTFilter`)
-      `world`.runtimeSystems[Stage.Update].add `systemNameLit`
-      `world`.runtimeSystems.systems[`systemNameLit`] = `system`
+      `world`.runtimeSystems.orders[Stage.Update].add `system`.id
+      if `system`.id >= `world`.runtimeSystems.systems.len():
+        `world`.runtimeSystems.systems.setLen(`system`.id + 1)
+      `world`.runtimeSystems.systems[`system`.id] = `system`
 
 macro registerRuntimeSystemsAt*(world: World, stage: Stage, systems: varargs[untyped]) =
   result = newStmtList()
   for system in systems:
     let systemName = system.strVal
-    let systemNameLit = systemName.newStrLitNode()
     let queryToCTFilter = QueryToCTFilterTable[systemName]
     result.add quote do:
       `world`.convertFilter(`system`, `queryToCTFilter`)
-      `world`.runtimeSystems[`stage`].add `systemNameLit`
-      `world`.runtimeSystems.systems[`systemNameLit`] = `system`
+      `world`.runtimeSystems.orders[`stage`].add `system`.id
+      if `system`.id >= `world`.runtimeSystems.systems.len():
+        `world`.runtimeSystems.systems.setLen(`system`.id + 1)
+      `world`.runtimeSystems.systems[`system`.id] = `system`
 
 macro registerTerminateSystems*(world: World, systems: varargs[untyped]) =
   result = newStmtList()
@@ -407,8 +408,8 @@ proc performRuntimeSystems*(world: var World) =
     world.control.freeDestroyedIds()
 
   for stage in Stage.low .. Stage.high:
-    for name in world.runtimeSystems.orders[stage]:
-      world.runtimeSystems.systems[name].run(world)
+    for id in world.runtimeSystems.orders[stage]:
+      world.runtimeSystems.systems[id].run(world)
 
 proc performTerminateSystems*(world: var World) =
   # defer:
@@ -479,8 +480,12 @@ func gatherFilters(
     else:
       error "Unsupported filter", filter[0]
 
+const SystemIdCounter = CacheCounter"SystemIdCounter"
+
 macro system*(theProc: untyped): untyped =
   let systemName = theProc[0].basename
+  let systemId = SystemIdCounter.value()
+  SystemIdCounter.inc()
 
   let queryTableNode = ident"queryTable"
   let controlNode = ident"control"
@@ -551,7 +556,7 @@ macro system*(theProc: untyped): untyped =
   QueryToCTFilterTable[systemName.strVal] = ctFilterTable
 
   return quote:
-    var `systemName` = System.init(`action`)
+    var `systemName` = System.init(`systemId`, `action`)
 
 macro `of`*(loop: ForLoopStmt): untyped =
   let

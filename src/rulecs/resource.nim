@@ -1,8 +1,6 @@
 {.experimental: "strictFuncs".}
 {.experimental: "views".}
 
-import pkg/seiryu/sugar
-
 type
   AbstractResource* = object of RootObj
 
