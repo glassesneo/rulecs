@@ -14,7 +14,7 @@ import
   std/typetraits
 import pkg/seiryu
 import pkg/seiryu/dbc
-import rulecs/[component, event, filter, resource]
+import ./[component, event, filter, resource]
 
 const QueryToCTFilterTable = CacheTable"QueryToCTFilter"
 
