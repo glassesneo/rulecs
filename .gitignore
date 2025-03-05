@@ -2,7 +2,7 @@ nimcache
 testresults*
 tests/*
 examples/*
+_deps/*
 !*.nim
 !*.nims
 nim.cfg
-
