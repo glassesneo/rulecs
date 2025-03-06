@@ -25,3 +25,6 @@ func enter*[T](resource: var Resource[T]): ptr T =
 
 func exit*[T](resource: Resource[T]) =
   discard
+
+func exit*[T](resource: var Resource[T]) =
+  discard
